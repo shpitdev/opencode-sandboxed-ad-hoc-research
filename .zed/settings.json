@@ -1,0 +1,40 @@
+{
+  "format_on_save": "on",
+  "code_actions_on_format": {
+    "source.organizeImports.biome": true
+  },
+  "languages": {
+    "TypeScript": {
+      "formatter": {
+        "external": {
+          "command": "biome",
+          "arguments": ["format", "--stdin-file-path", "{buffer_path}"]
+        }
+      }
+    },
+    "JavaScript": {
+      "formatter": {
+        "external": {
+          "command": "biome",
+          "arguments": ["format", "--stdin-file-path", "{buffer_path}"]
+        }
+      }
+    },
+    "JSON": {
+      "formatter": {
+        "external": {
+          "command": "biome",
+          "arguments": ["format", "--stdin-file-path", "{buffer_path}"]
+        }
+      }
+    },
+    "JSONC": {
+      "formatter": {
+        "external": {
+          "command": "biome",
+          "arguments": ["format", "--stdin-file-path", "{buffer_path}"]
+        }
+      }
+    }
+  }
+}

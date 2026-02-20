@@ -1,0 +1,50 @@
+[
+  {
+    "label": "Start OpenCode Daytona",
+    "command": "bun",
+    "args": ["run", "start"],
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Analyze URLs (example.md)",
+    "command": "bun",
+    "args": ["run", "analyze", "--", "--input", "example.md"],
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Biome Check",
+    "command": "bun",
+    "args": ["run", "check"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "Typecheck",
+    "command": "bun",
+    "args": ["run", "typecheck"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "Lint",
+    "command": "bun",
+    "args": ["run", "lint"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "Format",
+    "command": "bun",
+    "args": ["run", "format"],
+    "use_new_terminal": false,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  }
+]

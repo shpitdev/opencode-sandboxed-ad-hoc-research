@@ -1,0 +1,31 @@
+{
+  "name": "wtf-is-the-point-sandbox-research",
+  "version": "1.0.0",
+  "description": "Launch OpenCode web remotely in a Daytona sandbox",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.8",
+  "scripts": {
+    "start": "bun run src/start-opencode-daytona.ts",
+    "analyze": "bun run src/analyze-repos.ts",
+    "typecheck": "bunx tsc --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format . --write",
+    "check": "biome check ."
+  },
+  "keywords": [
+    "daytona",
+    "opencode",
+    "sandbox"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.3",
+    "@daytonaio/sdk": "^0.143.0",
+    "typescript": "^5.9.3"
+  }
+}
