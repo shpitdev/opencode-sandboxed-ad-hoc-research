@@ -1,7 +1,7 @@
 {
-  "name": "wtf-is-the-point-sandbox-research",
+  "name": "opencode-sandboxed-ad-hoc-research",
   "version": "1.0.0",
-  "description": "Launch OpenCode web remotely in a Daytona sandbox",
+  "description": "Run OpenCode in Daytona sandboxes for web sessions and ad hoc repository research",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.8",

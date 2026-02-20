@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "wtf-is-the-point-sandbox-research",
+      "name": "opencode-sandboxed-ad-hoc-research",
       "devDependencies": {
         "@biomejs/biome": "^2.4.3",
         "@daytonaio/sdk": "^0.143.0",

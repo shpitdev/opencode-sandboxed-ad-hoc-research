@@ -1,38 +1,76 @@
-# Remote OpenCode on Daytona
+# OpenCode Sandboxed Ad Hoc Research
 
-Launches an OpenCode web session inside a remote Daytona sandbox and prints a Daytona preview URL for the UI.
-By default it auto-opens the URL:
-- macOS: tries OpenCode desktop app first, then browser.
-- Linux/Windows: opens browser.
+Run OpenCode inside Daytona sandboxes for two workflows: remote OpenCode web sessions and URL-driven repository audits.
+
+<!-- Core Stack -->
+[![Daytona SDK](https://img.shields.io/badge/Daytona_SDK-0.143.0-0891B2?logo=databricks&logoColor=white)](https://www.daytona.io/docs)
+[![OpenCode](https://img.shields.io/badge/OpenCode-CLI-10B981?logo=terminal&logoColor=white)](https://github.com/opencode-ai/opencode)
+[![Bun](https://img.shields.io/badge/Bun-1.3.8-FBF0DF?logo=bun&logoColor=black)](https://bun.sh/docs)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/docs/)
+
+<!-- Tooling -->
+[![Biome](https://img.shields.io/badge/Biome-2.4.3-60A5FA?logo=biome&logoColor=white)](https://biomejs.dev/guides/getting-started/)
+
+---
+
+## What is this?
+
+This project automates Daytona sandbox setup and OpenCode execution.
+
+**It ships two entrypoints:**
+- `bun run start` - boots OpenCode web in a fresh Daytona sandbox and prints an externally reachable preview URL.
+- `bun run analyze` - runs headless OpenCode audits against one or more repository URLs and collects findings locally.
+
+---
+
+## Table of Contents
+
+- [What is this?](#what-is-this)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+- [Repository Audit Workflow](#repository-audit-workflow)
+- [Output Layout](#output-layout)
+- [Development](#development)
+- [Compatibility Notes](#compatibility-notes)
+
+---
 
 ## Prerequisites
 
-- Bun 1.3+
-- `DAYTONA_API_KEY` exported
-- `DAYTONA_API_URL` exported for self-hosted Daytona (example: `https://fucksap.com/api`)
-- Optional but recommended: `OPENCODE_SERVER_PASSWORD` exported (protects OpenCode web UI)
+- [Bun](https://bun.sh/) 1.3+
+- `DAYTONA_API_KEY`
+- `DAYTONA_API_URL` for self-hosted Daytona (example: `https://daytona.example.com/api`)
+- Optional but recommended: `OPENCODE_SERVER_PASSWORD`
 
-## Install
+---
+
+## Quick Start
 
 ```bash
 bun install
-```
-
-## Run
-
-```bash
 bun run start
 ```
 
-OpenCode will be available on the printed preview URL.
+OpenCode will be available on the printed Daytona preview URL.
 
 Stop with `Ctrl+C`.
 
-Compatibility:
-- Works with newer Daytona control planes.
-- Includes a fallback for older/self-hosted Daytona versions that expose `proxyToolboxUrl` in `/config` but do not expose `/sandbox/:id/toolbox-proxy-url`.
+---
 
-## Useful options
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `bun run start` | Launch OpenCode web in a Daytona sandbox |
+| `bun run analyze -- --input example.md` | Analyze repos listed in a file |
+| `bun run analyze -- <url1> <url2>` | Analyze direct repo URLs |
+| `bun run lint` | Lint with Biome |
+| `bun run format` | Format with Biome |
+| `bun run check` | Run Biome checks |
+| `bun run typecheck` | Run TypeScript checks |
+
+Useful `start` flags:
 
 ```bash
 bun run start -- --port 3000 --target us --sandbox-name opencode-dev
@@ -40,58 +78,56 @@ bun run start -- --keep-sandbox
 bun run start -- --no-open
 ```
 
-## Repository audit helper
+---
 
-`src/analyze-repos.ts` is a URL-driven helper for remote audits:
-- one Daytona sandbox per URL
-- clone repo in sandbox
-- run OpenCode headlessly for an evidence-based audit
-- copy generated findings markdown + repo README to local output
-- delete sandbox automatically (unless `--keep-sandbox`)
-- defaults to `--model opencode/gpt-5-nano` for out-of-the-box runs
-- auto-installs `git` and `node/npm` inside sandbox when missing
-- forwards common model-provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, etc.) into sandbox runs
-- syncs local OpenCode config files from `~/.config/opencode` when available
+## Repository Audit Workflow
 
-Run from URL list (for example `example.md`):
+`src/analyze-repos.ts` supports evidence-based audits at scale.
+
+### What it does
+
+- Creates one Daytona sandbox per URL
+- Clones each repo in its sandbox
+- Runs OpenCode headlessly to generate findings
+- Copies findings plus repo README back to local output
+- Deletes sandboxes automatically unless `--keep-sandbox`
+
+### Defaults and behavior
+
+- Default model: `opencode/gpt-5-nano`
+- Auto-installs missing `git` and `node/npm` inside sandbox
+- Forwards provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `OPENROUTER_*`, etc.)
+- Syncs local OpenCode config files from `~/.config/opencode` when present
+
+### Examples
 
 ```bash
 bun run analyze -- --input example.md
-```
-
-Run with direct URLs:
-
-```bash
 bun run analyze -- https://github.com/owner/repo-one https://github.com/owner/repo-two
-```
-
-If no URLs and no `--input` are provided, it falls back to `example.md` when that file exists.
-
-Useful flags:
-
-```bash
 bun run analyze -- --out-dir findings --model openai/gpt-5 --target us
 bun run analyze -- --analyze-timeout-sec 3600 --keep-sandbox
 ```
 
-Notes:
-- first OpenCode run in a fresh sandbox can spend time on one-time DB migration, so short timeouts may fail.
-- use a larger `--analyze-timeout-sec` (for example `1800` or `3600`) for deeper audits.
+If no URLs and no `--input` are provided, the script uses `example.md` when it exists.
 
-Output layout:
-- `<out-dir>/index.md`: run summary across all URLs
-- `<out-dir>/<NN-slug>/findings.md`: final audit report for each repo
-- `<out-dir>/<NN-slug>/README.*`: copied README from analyzed repo (if found)
-- `<out-dir>/<NN-slug>/opencode-run.log`: raw OpenCode run output
+---
 
-Successful example retained in this repo:
-- output folder: `findings-confidence-3`
-- command used:
+## Output Layout
+
+- `<out-dir>/index.md` - summary across all URLs
+- `<out-dir>/<NN-slug>/findings.md` - final report for each repository
+- `<out-dir>/<NN-slug>/README.*` - copied repository README (if found)
+- `<out-dir>/<NN-slug>/opencode-run.log` - raw OpenCode run output
+
+Example retained in this repo:
+
 ```bash
 bun run analyze -- --input example.md --out-dir findings-confidence-3 --analyze-timeout-sec 3600 --keep-sandbox
 ```
 
-## Dev tooling
+---
+
+## Development
 
 ```bash
 bun run lint
@@ -100,12 +136,16 @@ bun run check
 bun run typecheck
 ```
 
-- Biome config: `biome.json`
-- Zed project settings: `.zed/settings.json`
-- Zed tasks: `.zed/tasks.json`
+Project config files:
 
-## Do I need a Daytona plugin for OpenCode?
+- `biome.json`
+- `.zed/settings.json`
+- `.zed/tasks.json`
 
-No, not for this flow.
-- This script runs OpenCode directly inside the sandbox (`opencode web`) and writes an OpenCode config with Daytona-aware prompt defaults.
-- Daytona plugin/integration packages are optional ecosystem tooling, not required for running OpenCode web in a Daytona sandbox.
+---
+
+## Compatibility Notes
+
+- Works with modern Daytona control planes.
+- Includes fallback support for older/self-hosted Daytona setups that expose `proxyToolboxUrl` in `/config` but not `/sandbox/:id/toolbox-proxy-url`.
+- No Daytona OpenCode plugin is required for this flow.
