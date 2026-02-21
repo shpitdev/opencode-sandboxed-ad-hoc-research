@@ -1,0 +1,30 @@
+name: ValidatePrTitle
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  ValidatePrTitle:
+    name: ValidatePrTitle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate pull request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          title="${PR_TITLE}"
+          if [ -z "${title// /}" ]; then
+            echo "PR title cannot be empty."
+            exit 1
+          fi
+
+          if [[ "$title" =~ ^[Ww][Ii][Pp]([:\ ]|$) ]]; then
+            echo "PR title cannot start with WIP."
+            exit 1
+          fi
+
+          echo "PR title is valid: $title"
