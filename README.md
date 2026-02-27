@@ -27,7 +27,9 @@ This project automates Daytona sandbox setup and OpenCode execution.
 
 - [What is this?](#what-is-this)
 - [Prerequisites](#prerequisites)
+- [Install On New Machine](#install-on-new-machine)
 - [Quick Start](#quick-start)
+- [Installer & Obsidian Cataloging](#installer--obsidian-cataloging)
 - [Commands](#commands)
 - [Repository Audit Workflow](#repository-audit-workflow)
 - [Output Layout](#output-layout)
@@ -42,6 +44,24 @@ This project automates Daytona sandbox setup and OpenCode execution.
 - `DAYTONA_API_KEY`
 - `DAYTONA_API_URL` for self-hosted Daytona (example: `https://daytona.example.com/api`)
 - Optional but recommended: `OPENCODE_SERVER_PASSWORD`
+- Optional: `obsidian` command in `PATH` (for Obsidian note cataloging/open)
+
+---
+
+## Install On New Machine
+
+Use the bootstrap installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/shpitdev/opencode-sandboxed-ad-hoc-research/main/scripts/install-gh-package.sh | bash
+```
+
+It will:
+
+- ask for (or reuse) a GitHub token with `read:packages`
+- configure `~/.npmrc` for GitHub Packages
+- install `@shpitdev/opencode-sandboxed-ad-hoc-research` globally
+- launch the guided setup flow for Daytona/model credentials
 
 ---
 
@@ -58,13 +78,50 @@ Stop with `Ctrl+C`.
 
 ---
 
+## Installer & Obsidian Cataloging
+
+Run the guided installer:
+
+```bash
+bun run setup
+```
+
+It sets up:
+
+- `~/.config/opencode/shpit.toml` for shared preferences
+- `~/.config/opencode/.env` for optional credential storage
+
+No provider API key is required if you only use free `opencode/*` models (for example `opencode/minimax-m2.5-free`).
+
+`analyze` automatically catalogs findings to Obsidian when enabled in `shpit.toml`.
+
+Example config:
+
+```toml
+[obsidian]
+enabled = true
+command = "obsidian"
+vault_path = "/absolute/path/to/vault"
+notes_root = "Research/OpenCode"
+catalog_mode = "date" # date | repo
+open_after_catalog = false
+```
+
+Project-level `shpit.toml` or `.shpit.toml` overrides global config.
+The configured command must be `obsidian` (not `obs`).
+
+---
+
 ## Commands
 
 | Command | Purpose |
 |---|---|
+| `scripts/install-gh-package.sh` | Bootstrap install from GitHub Packages on a new machine |
+| `bun run setup` | Guided setup for shared config/env and Obsidian cataloging |
 | `bun run start` | Launch OpenCode web in a Daytona sandbox |
 | `bun run analyze -- --input example.md` | Analyze repos listed in a file |
 | `bun run analyze -- <url1> <url2>` | Analyze direct repo URLs |
+| `bun run build` | Compile distributable CLI files into `dist/` |
 | `bun run lint` | Lint with Biome |
 | `bun run format` | Format with Biome |
 | `bun run check` | Run Biome checks |
@@ -94,17 +151,22 @@ bun run start -- --no-open
 
 ### Defaults and behavior
 
-- Default model: `opencode/gpt-5-nano`
+- Default model selection:
+  - Standard: `zai-coding-plan/glm-4.7-flash`
+  - Vision mode (`--vision`): `zai-coding-plan/glm-4.6v`
+- Override with `--model`, `--variant`, `OPENCODE_ANALYZE_MODEL`, or `OPENCODE_ANALYZE_VARIANT`
 - Auto-installs missing `git` and `node/npm` inside sandbox
-- Forwards provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `OPENROUTER_*`, etc.)
+- Forwards provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `OPENROUTER_*`, `ZHIPU_*`, `MINIMAX_*`, etc.)
 - Syncs local OpenCode config files from `~/.config/opencode` when present
+- Auto-catalogs findings into Obsidian when enabled via `shpit.toml`
 
 ### Examples
 
 ```bash
 bun run analyze -- --input example.md
 bun run analyze -- https://github.com/owner/repo-one https://github.com/owner/repo-two
-bun run analyze -- --out-dir findings --model openai/gpt-5 --target us
+bun run analyze -- --out-dir findings --model zai-coding-plan/glm-4.7-flash --target us
+bun run analyze -- --vision
 bun run analyze -- --analyze-timeout-sec 3600 --keep-sandbox
 ```
 
@@ -141,6 +203,7 @@ Project config files:
 - `biome.json`
 - `.zed/settings.json`
 - `.zed/tasks.json`
+- `tsconfig.build.json`
 
 ---
 

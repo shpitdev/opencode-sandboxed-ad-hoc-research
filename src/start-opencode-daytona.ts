@@ -4,6 +4,8 @@ import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import { Daytona, type Sandbox } from "@daytonaio/sdk";
+import { buildInstallOpencodeCommand } from "./opencode-cli.js";
+import { loadConfiguredEnv } from "./shpit-config.js";
 
 type CliOptions = {
   port: number;
@@ -319,6 +321,13 @@ async function streamCommandLogsUntilExit(params: {
 }
 
 async function main(): Promise<void> {
+  const loadedEnv = await loadConfiguredEnv();
+  if (loadedEnv.keysLoaded.length > 0) {
+    console.log(
+      `[local] Loaded ${loadedEnv.keysLoaded.length} env var(s) from config (.env) files.`,
+    );
+  }
+
   const options = parseCliOptions();
   const apiKey = requireEnv("DAYTONA_API_KEY");
   const apiUrl = process.env.DAYTONA_API_URL;
@@ -431,7 +440,7 @@ async function main(): Promise<void> {
     console.log("[local] Installing latest OpenCode CLI in sandbox...");
     await runCommand(
       sandbox,
-      'if command -v bun >/dev/null 2>&1; then bun add -g opencode-ai@latest; else npm install -g opencode-ai@latest --prefix "$HOME/.local"; fi',
+      buildInstallOpencodeCommand(),
       "Install OpenCode CLI",
       options.installTimeoutSec,
     );

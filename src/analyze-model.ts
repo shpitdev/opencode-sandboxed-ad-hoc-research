@@ -1,0 +1,25 @@
+import process from "node:process";
+
+export type AnalyzeModelInput = {
+  model?: string;
+  variant?: string;
+  vision?: boolean;
+};
+
+export type ResolvedAnalyzeModel = {
+  model: string;
+  variant?: string;
+};
+
+export function resolveAnalyzeModel(input: AnalyzeModelInput): ResolvedAnalyzeModel {
+  const defaultModel = input.vision
+    ? (process.env.OPENCODE_ANALYZE_VISION_MODEL ?? "zai-coding-plan/glm-4.6v")
+    : "zai-coding-plan/glm-4.7-flash";
+  const model = input.model ?? process.env.OPENCODE_ANALYZE_MODEL ?? defaultModel;
+  const variant = input.variant ?? process.env.OPENCODE_ANALYZE_VARIANT;
+
+  return {
+    model,
+    variant,
+  };
+}
