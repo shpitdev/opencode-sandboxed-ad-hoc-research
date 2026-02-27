@@ -20,6 +20,9 @@ on:
         required: false
         default: "300"
 
+permissions:
+  contents: read
+
 env:
   DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
   DAYTONA_API_URL: ${{ vars.DAYTONA_API_URL }}
