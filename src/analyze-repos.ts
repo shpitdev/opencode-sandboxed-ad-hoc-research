@@ -3,6 +3,10 @@ import path from "node:path";
 import process from "node:process";
 import { parseArgs } from "node:util";
 import { Daytona, type Sandbox } from "@daytonaio/sdk";
+import { resolveAnalyzeModel } from "./analyze-model.js";
+import { catalogAnalysisResult } from "./obsidian-catalog.js";
+import { buildInstallOpencodeCommand, buildOpencodeRunCommand } from "./opencode-cli.js";
+import { loadConfiguredEnv, type ResolvedShpitConfig, resolveShpitConfig } from "./shpit-config.js";
 
 type CliOptions = {
   inputFile?: string;
@@ -13,6 +17,8 @@ type CliOptions = {
   keepSandbox: boolean;
   target?: string;
   model?: string;
+  variant?: string;
+  vision: boolean;
   urls: string[];
 };
 
@@ -33,6 +39,7 @@ type AnalyzeResult = {
   localDir: string;
   findingsPath: string;
   readmePath?: string;
+  obsidianNotePath?: string;
   success: boolean;
   error?: string;
 };
@@ -63,7 +70,9 @@ function collectForwardedEnvEntries(): Array<[string, string]> {
     "GOOGLE_",
     "GOOGLE_GENERATIVE_AI_",
     "GROQ_",
+    "MINIMAX_",
     "MISTRAL_",
+    "ZHIPU_",
     "TOGETHER_",
     "DEEPSEEK_",
     "OPENROUTER_",
@@ -171,7 +180,9 @@ function parseCliOptions(): CliOptions {
       "analyze-timeout-sec": { type: "string", default: "2400" },
       "keep-sandbox": { type: "boolean", default: false },
       target: { type: "string" },
-      model: { type: "string", default: "opencode/gpt-5-nano" },
+      model: { type: "string" },
+      variant: { type: "string" },
+      vision: { type: "boolean", default: false },
     },
     strict: true,
     allowPositionals: true,
@@ -183,7 +194,8 @@ function parseCliOptions(): CliOptions {
 Examples:
   bun run analyze -- --input example.md
   bun run analyze -- https://github.com/agenticnotetaking/arscontexta
-  bun run analyze -- --input links.md --out-dir findings --model openai/gpt-5
+  bun run analyze -- --input links.md --out-dir findings --model zai-coding-plan/glm-4.7-flash
+  bun run analyze -- --vision
 
 Options:
   -i, --input <path>             Markdown/text file containing links
@@ -192,7 +204,9 @@ Options:
       --install-timeout-sec <n>  OpenCode install timeout (default: 900)
       --analyze-timeout-sec <n>  Per-repo analysis timeout (default: 2400)
       --target <name>            Daytona target override
-      --model <provider/model>   OpenCode model (default: opencode/gpt-5-nano)
+      --model <provider/model>   OpenCode model (default: zai-coding-plan/glm-4.7-flash)
+      --variant <name>           Model variant (example: xhigh)
+      --vision                   Prefer vision-capable default model (zai-coding-plan/glm-4.6v)
       --keep-sandbox             Keep each sandbox instead of deleting it
   -h, --help                     Show this help
 `);
@@ -208,6 +222,8 @@ Options:
     keepSandbox: values["keep-sandbox"],
     target: values.target,
     model: values.model,
+    variant: values.variant,
+    vision: values.vision,
     urls: positionals,
   };
 }
@@ -345,6 +361,10 @@ function detectOpencodeFatalError(output: string): string | undefined {
     }
   }
   return undefined;
+}
+
+function hasReadyResponse(output: string): boolean {
+  return /\bready\b/i.test(output);
 }
 
 async function withRetries<T>(params: {
@@ -575,11 +595,12 @@ function buildAnalysisPrompt(params: { inputUrl: string; reportPath: string }): 
 async function analyzeOneRepo(params: {
   daytona: Daytona;
   options: CliOptions;
+  config: ResolvedShpitConfig;
   url: string;
   index: number;
   total: number;
 }): Promise<AnalyzeResult> {
-  const { daytona, options, url, index, total } = params;
+  const { daytona, options, config, url, index, total } = params;
   const slug = slugFromRepoUrl(url);
   const runPrefix = `${String(index + 1).padStart(2, "0")}-${slug}`;
   const localDir = path.join(options.outDir, runPrefix);
@@ -646,7 +667,7 @@ async function analyzeOneRepo(params: {
 
     await requireSuccess(
       sandbox,
-      'if command -v bun >/dev/null 2>&1; then bun add -g opencode-ai@latest; else npm install -g opencode-ai@latest --prefix "$HOME/.local"; fi',
+      buildInstallOpencodeCommand(),
       "Install OpenCode CLI",
       options.installTimeoutSec,
     );
@@ -668,32 +689,38 @@ async function analyzeOneRepo(params: {
     );
     if (!hasProviderCredential) {
       console.warn(
-        `[analyze] (${runPrefix}) No model provider env vars detected locally (OPENAI_*, ANTHROPIC_*, etc). OpenCode may fail or block.`,
+        `[analyze] (${runPrefix}) No model provider env vars detected locally (OPENAI_*, ANTHROPIC_*, ZHIPU_*, etc). OpenCode may fail or block.`,
       );
     }
-    const forwardedEnvPrefix = forwardedEnvEntries
-      .map(([name, value]) => `${name}=${shellEscape(value)}`)
-      .join(" ");
-    const modelArg = options.model ? ` --model ${shellEscape(options.model)}` : "";
-
-    const buildOpenCodeRunCommand = (promptText: string): string =>
-      `${forwardedEnvPrefix ? `${forwardedEnvPrefix} ` : ""}` +
-      `OPENCODE_BIN="$(${resolveOpencodeBin})"; ` +
-      `"${"$"}OPENCODE_BIN" run --print-logs${modelArg} --dir ${shellEscape(remoteRepoDir)} ${shellEscape(promptText)}`;
+    const selectedModel = resolveAnalyzeModel({
+      model: options.model,
+      variant: options.variant,
+      vision: options.vision,
+    });
+    console.log(
+      `[analyze] (${runPrefix}) Model: ${selectedModel.model}${selectedModel.variant ? ` (variant: ${selectedModel.variant})` : ""}`,
+    );
 
     const preflightPrompt = "Reply with exactly one word: ready";
     const preflightTimeoutSec = Math.max(
       90,
       Math.min(300, Math.floor(options.analyzeTimeoutSec / 4)),
     );
-    const preflightCommandText = buildOpenCodeRunCommand(preflightPrompt);
+    const preflightCommandText = buildOpencodeRunCommand({
+      resolveOpencodeBinCommand: resolveOpencodeBin,
+      workingDir: remoteRepoDir,
+      prompt: preflightPrompt,
+      model: selectedModel.model,
+      variant: selectedModel.variant,
+      forwardedEnvEntries,
+    });
 
     console.log(`[analyze] (${runPrefix}) Running OpenCode preflight...`);
     const preflightResult = await runCommand(sandbox, preflightCommandText, preflightTimeoutSec);
     const preflightOutput = preflightResult.output;
     await writeFile(path.join(localDir, "opencode-preflight.log"), preflightOutput, "utf8");
     const preflightFatalError = detectOpencodeFatalError(preflightOutput);
-    const preflightReady = /^ready\s*$/im.test(preflightOutput);
+    const preflightReady = hasReadyResponse(preflightOutput);
     if (preflightResult.exitCode !== 0 || preflightFatalError || !preflightReady) {
       const preview = preflightOutput.split("\n").slice(-120).join("\n");
       const reason =
@@ -704,7 +731,14 @@ async function analyzeOneRepo(params: {
       throw new Error(`OpenCode preflight failed (${reason})\n${preview}`);
     }
 
-    const runCommandText = buildOpenCodeRunCommand(prompt);
+    const runCommandText = buildOpencodeRunCommand({
+      resolveOpencodeBinCommand: resolveOpencodeBin,
+      workingDir: remoteRepoDir,
+      prompt,
+      model: selectedModel.model,
+      variant: selectedModel.variant,
+      forwardedEnvEntries,
+    });
     const remoteOpencodeLogPath = `/tmp/${slug}.opencode.log`;
     const localOpencodeLogPath = path.join(localDir, "opencode-run.log");
 
@@ -743,8 +777,7 @@ async function analyzeOneRepo(params: {
       readmePath = localReadmeFile;
     }
 
-    console.log(`[analyze] (${runPrefix}) Wrote ${findingsPath}`);
-    return {
+    const result: AnalyzeResult = {
       url,
       slug,
       localDir,
@@ -752,6 +785,13 @@ async function analyzeOneRepo(params: {
       readmePath,
       success: true,
     };
+    await maybeCatalogResult({
+      config,
+      result,
+      runPrefix,
+    });
+    console.log(`[analyze] (${runPrefix}) Wrote ${findingsPath}`);
+    return result;
   } catch (error) {
     const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
     const fallback = [
@@ -768,7 +808,7 @@ async function analyzeOneRepo(params: {
     await writeFile(findingsPath, fallback, "utf8");
 
     console.error(`[analyze] (${runPrefix}) Failed: ${message}`);
-    return {
+    const result: AnalyzeResult = {
       url,
       slug,
       localDir,
@@ -776,6 +816,12 @@ async function analyzeOneRepo(params: {
       success: false,
       error: message,
     };
+    await maybeCatalogResult({
+      config,
+      result,
+      runPrefix,
+    });
+    return result;
   } finally {
     if (sandbox && !options.keepSandbox) {
       try {
@@ -788,6 +834,45 @@ async function analyzeOneRepo(params: {
         console.error(`[analyze] (${runPrefix}) Sandbox cleanup failed: ${message}`);
       }
     }
+  }
+}
+
+async function maybeCatalogResult(params: {
+  config: ResolvedShpitConfig;
+  result: AnalyzeResult;
+  runPrefix: string;
+}): Promise<void> {
+  const { config, result, runPrefix } = params;
+
+  try {
+    const catalogResult = await catalogAnalysisResult({
+      config,
+      slug: result.slug,
+      runLabel: runPrefix,
+      sourceUrl: result.url,
+      findingsPath: result.findingsPath,
+      success: result.success,
+      error: result.error,
+    });
+
+    if (!catalogResult.attempted && catalogResult.skippedReason) {
+      console.log(
+        `[analyze] (${runPrefix}) Obsidian catalog skipped: ${catalogResult.skippedReason}`,
+      );
+      return;
+    }
+
+    if (catalogResult.written && catalogResult.notePath) {
+      result.obsidianNotePath = catalogResult.notePath;
+      console.log(`[analyze] (${runPrefix}) Obsidian note: ${catalogResult.notePath}`);
+    }
+
+    if (catalogResult.warning) {
+      console.warn(`[analyze] (${runPrefix}) Obsidian warning: ${catalogResult.warning}`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    console.warn(`[analyze] (${runPrefix}) Obsidian catalog failed: ${message}`);
   }
 }
 
@@ -809,6 +894,9 @@ async function writeIndex(results: AnalyzeResult[], outDir: string): Promise<voi
     if (result.readmePath) {
       lines.push(`- README copy: \`${path.relative(outDir, result.readmePath)}\``);
     }
+    if (result.obsidianNotePath) {
+      lines.push(`- Obsidian note: \`${result.obsidianNotePath}\``);
+    }
     if (result.error) {
       lines.push(`- Error: ${result.error.split("\n")[0]}`);
     }
@@ -819,6 +907,14 @@ async function writeIndex(results: AnalyzeResult[], outDir: string): Promise<voi
 }
 
 async function main(): Promise<void> {
+  const loadedEnv = await loadConfiguredEnv();
+  if (loadedEnv.keysLoaded.length > 0) {
+    console.log(
+      `[analyze] Loaded ${loadedEnv.keysLoaded.length} env var(s) from config (.env) files.`,
+    );
+  }
+  const config = await resolveShpitConfig();
+
   const options = parseCliOptions();
   const urls = await resolveInputUrls(options);
   const apiKey = requireEnv("DAYTONA_API_KEY");
@@ -841,6 +937,7 @@ async function main(): Promise<void> {
     const result = await analyzeOneRepo({
       daytona,
       options,
+      config,
       url,
       index,
       total: urls.length,
