@@ -12,6 +12,9 @@ type CliOptions = {
   notesRoot?: string;
   catalogMode?: "date" | "repo";
   openAfterCatalog?: boolean;
+  integrationMode?: "desktop" | "headless";
+  syncAfterCatalog?: boolean;
+  syncTimeoutSec?: number;
   daytonaApiKey?: string;
   openaiApiKey?: string;
   zhipuApiKey?: string;
@@ -27,7 +30,10 @@ function parseCliOptions(): CliOptions {
       "vault-path": { type: "string" },
       "notes-root": { type: "string" },
       "catalog-mode": { type: "string" },
-      "open-after-catalog": { type: "boolean", default: false },
+      "open-after-catalog": { type: "boolean" },
+      "obsidian-integration": { type: "string" },
+      "sync-after-catalog": { type: "boolean" },
+      "sync-timeout-sec": { type: "string" },
       "daytona-api-key": { type: "string" },
       "openai-api-key": { type: "string" },
       "zhipu-api-key": { type: "string" },
@@ -44,7 +50,10 @@ Options:
       --vault-path <path>       Obsidian vault path (absolute or ~/...)
       --notes-root <path>       Folder inside vault for audit notes (default: Research/OpenCode)
       --catalog-mode <mode>     date | repo (default: date)
-      --open-after-catalog      Open each new note via obsidian CLI after writing
+      --obsidian-integration    headless | desktop (default: auto-detect)
+      --sync-after-catalog      Run 'ob sync' after writing each note (headless mode)
+      --sync-timeout-sec <sec>  Timeout for 'ob sync' (default: 120)
+      --open-after-catalog      Open each new note via obsidian CLI (desktop mode)
       --daytona-api-key <key>   Seed DAYTONA_API_KEY into ~/.config/opencode/.env
       --openai-api-key <key>    Seed OPENAI_API_KEY into ~/.config/opencode/.env
       --zhipu-api-key <key>     Seed ZHIPU_API_KEY into ~/.config/opencode/.env
@@ -58,12 +67,34 @@ Options:
     throw new Error(`--catalog-mode must be "date" or "repo". Received "${rawCatalogMode}".`);
   }
 
+  const rawIntegrationMode = values["obsidian-integration"];
+  if (rawIntegrationMode && rawIntegrationMode !== "desktop" && rawIntegrationMode !== "headless") {
+    throw new Error(
+      `--obsidian-integration must be "desktop" or "headless". Received "${rawIntegrationMode}".`,
+    );
+  }
+
+  const rawSyncTimeoutSec = values["sync-timeout-sec"];
+  let syncTimeoutSec: number | undefined;
+  if (rawSyncTimeoutSec !== undefined) {
+    const parsed = Number.parseInt(rawSyncTimeoutSec, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error(
+        `--sync-timeout-sec must be a positive integer. Received "${rawSyncTimeoutSec}".`,
+      );
+    }
+    syncTimeoutSec = parsed;
+  }
+
   return {
     yes: values.yes,
     vaultPath: values["vault-path"],
     notesRoot: values["notes-root"],
     catalogMode: rawCatalogMode as "date" | "repo" | undefined,
     openAfterCatalog: values["open-after-catalog"],
+    integrationMode: rawIntegrationMode as "desktop" | "headless" | undefined,
+    syncAfterCatalog: values["sync-after-catalog"],
+    syncTimeoutSec,
     daytonaApiKey: values["daytona-api-key"],
     openaiApiKey: values["openai-api-key"],
     zhipuApiKey: values["zhipu-api-key"],
@@ -84,13 +115,43 @@ function expandHomeDir(value: string | undefined): string | undefined {
   return path.join(home, value.slice(1));
 }
 
-async function detectObsidianBinary(): Promise<string | undefined> {
+async function detectCommandBinary(command: string): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync("sh", ["-lc", "command -v obsidian"]);
+    const { stdout } = await execFileAsync("which", [command]);
     const resolved = stdout.trim();
     return resolved || undefined;
   } catch {
     return undefined;
+  }
+}
+
+function countRemoteVaults(output: string): number {
+  return output.split(/\r?\n/).filter((line) => /^\s*[a-f0-9]{32}\s+"/.test(line)).length;
+}
+
+function describeExecError(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return String(error);
+  }
+
+  const message = "message" in error ? String(error.message) : "unknown error";
+  const stdout = "stdout" in error ? String(error.stdout ?? "") : "";
+  const stderr = "stderr" in error ? String(error.stderr ?? "") : "";
+  const details = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+  return details ? `${message}\n${details}` : message;
+}
+
+async function validateHeadlessSyncAccess(command: string): Promise<number> {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, ["sync-list-remote"], {
+      timeout: 30_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return countRemoteVaults(`${stdout}\n${stderr}`);
+  } catch (error) {
+    throw new Error(
+      `Headless Sync preflight failed. Ensure Obsidian Catalyst access, an active Obsidian Sync subscription, and successful \`ob login\`.\n${describeExecError(error)}`,
+    );
   }
 }
 
@@ -178,6 +239,14 @@ async function askText(params: {
   return answer;
 }
 
+function parsePositiveInteger(value: string, label: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive integer. Received "${value}".`);
+  }
+  return parsed;
+}
+
 async function main(): Promise<void> {
   const options = parseCliOptions();
   await loadConfiguredEnv();
@@ -192,19 +261,34 @@ async function main(): Promise<void> {
   const configPath = path.join(configDir, "shpit.toml");
   const envPath = path.join(configDir, ".env");
 
-  const obsidianBinary = await detectObsidianBinary();
+  const obsidianBinary = await detectCommandBinary("obsidian");
+  const headlessBinary = await detectCommandBinary("ob");
   console.log(
     obsidianBinary
-      ? `[install] Detected Obsidian CLI command at: ${obsidianBinary}`
-      : "[install] Obsidian CLI command not found in PATH. Expected command name: obsidian",
+      ? `[install] Detected Obsidian desktop CLI at: ${obsidianBinary}`
+      : "[install] Obsidian desktop CLI not found in PATH (command: obsidian)",
   );
   console.log(
-    "[install] The installer will not execute Obsidian commands; it only configures them.",
+    headlessBinary
+      ? `[install] Detected Obsidian Headless CLI at: ${headlessBinary}`
+      : "[install] Obsidian Headless CLI not found in PATH (command: ob)",
+  );
+  console.log(
+    "[install] Headless mode runs a real preflight against Obsidian Sync using `ob sync-list-remote`.",
   );
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const nonInteractive = options.yes;
+    const hasExistingConfig = Boolean(
+      existingConfig.paths.globalConfigPath ?? existingConfig.paths.projectConfigPath,
+    );
+    const recommendedIntegrationMode = hasExistingConfig
+      ? existingConfig.obsidian.integrationMode
+      : headlessBinary
+        ? "headless"
+        : "desktop";
+    const headlessCommand = existingConfig.obsidian.headlessCommand;
 
     const enableObsidian = nonInteractive
       ? Boolean(options.vaultPath ?? existingConfig.obsidian.enabled)
@@ -213,6 +297,21 @@ async function main(): Promise<void> {
           prompt: "Enable automatic Obsidian cataloging for analyze results?",
           defaultValue: existingConfig.obsidian.enabled,
         });
+
+    const requestedIntegrationMode =
+      options.integrationMode ??
+      (nonInteractive
+        ? recommendedIntegrationMode
+        : await askText({
+            rl,
+            prompt: "Obsidian integration mode (headless|desktop)",
+            defaultValue: recommendedIntegrationMode,
+          }));
+    const integrationMode =
+      (requestedIntegrationMode ?? recommendedIntegrationMode).trim() || recommendedIntegrationMode;
+    if (integrationMode !== "headless" && integrationMode !== "desktop") {
+      throw new Error(`Invalid integration mode "${integrationMode}".`);
+    }
 
     const vaultPath = expandHomeDir(
       options.vaultPath ??
@@ -249,16 +348,68 @@ async function main(): Promise<void> {
       throw new Error(`Invalid catalog mode "${catalogMode}".`);
     }
 
-    const openAfterCatalog = nonInteractive
-      ? Boolean(options.openAfterCatalog)
-      : await askYesNo({
-          rl,
-          prompt: "Open each created note via obsidian command",
-          defaultValue: existingConfig.obsidian.openAfterCatalog,
-        });
+    const openAfterCatalog =
+      integrationMode === "desktop"
+        ? nonInteractive
+          ? (options.openAfterCatalog ?? existingConfig.obsidian.openAfterCatalog)
+          : await askYesNo({
+              rl,
+              prompt: "Open each created note via obsidian command",
+              defaultValue: existingConfig.obsidian.openAfterCatalog,
+            })
+        : false;
+
+    const syncAfterCatalog =
+      integrationMode === "headless"
+        ? nonInteractive
+          ? (options.syncAfterCatalog ?? existingConfig.obsidian.syncAfterCatalog)
+          : await askYesNo({
+              rl,
+              prompt: "Run `ob sync` after each note write",
+              defaultValue: existingConfig.obsidian.syncAfterCatalog,
+            })
+        : false;
+
+    let syncTimeoutSec = options.syncTimeoutSec ?? existingConfig.obsidian.syncTimeoutSec;
+    if (integrationMode === "headless" && !nonInteractive && options.syncTimeoutSec === undefined) {
+      const entered = await askText({
+        rl,
+        prompt: "Headless sync timeout in seconds",
+        defaultValue: String(existingConfig.obsidian.syncTimeoutSec),
+      });
+      if (!entered) {
+        throw new Error("Headless sync timeout is required in headless mode.");
+      }
+      syncTimeoutSec = parsePositiveInteger(entered, "Headless sync timeout");
+    }
 
     if (enableObsidian && !vaultPath) {
       throw new Error("Obsidian cataloging is enabled, but no vault path was provided.");
+    }
+
+    if (enableObsidian && integrationMode === "desktop" && openAfterCatalog && !obsidianBinary) {
+      throw new Error(
+        "Desktop integration with open_after_catalog requires the `obsidian` command in PATH.",
+      );
+    }
+
+    if (enableObsidian && integrationMode === "headless") {
+      const resolvedHeadlessBinary = await detectCommandBinary(headlessCommand);
+      if (!resolvedHeadlessBinary) {
+        throw new Error(
+          "Headless integration requires `ob` in PATH. Install with: npm install -g obsidian-headless",
+        );
+      }
+      const remoteVaultCount = await validateHeadlessSyncAccess(headlessCommand);
+      if (remoteVaultCount > 0) {
+        console.log(
+          `[install] Headless preflight passed. Remote vaults visible to this account: ${remoteVaultCount}`,
+        );
+      } else {
+        console.warn(
+          '[install] Headless preflight succeeded but no remote vaults were found. Create one with `ob sync-create-remote --name "..."`.',
+        );
+      }
     }
 
     await mkdir(configDir, { recursive: true });
@@ -269,6 +420,8 @@ async function main(): Promise<void> {
     shpitTomlLines.push("[obsidian]");
     shpitTomlLines.push(`enabled = ${enableObsidian ? "true" : "false"}`);
     shpitTomlLines.push('command = "obsidian"');
+    shpitTomlLines.push(`integration_mode = ${JSON.stringify(integrationMode)}`);
+    shpitTomlLines.push(`headless_command = ${JSON.stringify(headlessCommand)}`);
     if (vaultPath) {
       shpitTomlLines.push(`vault_path = ${JSON.stringify(vaultPath)}`);
     }
@@ -278,6 +431,8 @@ async function main(): Promise<void> {
     shpitTomlLines.push(
       `catalog_mode = ${JSON.stringify(catalogMode ?? existingConfig.obsidian.catalogMode)}`,
     );
+    shpitTomlLines.push(`sync_after_catalog = ${syncAfterCatalog ? "true" : "false"}`);
+    shpitTomlLines.push(`sync_timeout_sec = ${syncTimeoutSec}`);
     shpitTomlLines.push(`open_after_catalog = ${openAfterCatalog ? "true" : "false"}`);
     shpitTomlLines.push("");
 

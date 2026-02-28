@@ -12,6 +12,10 @@ describe("shpit config parsing", () => {
         'notes_root = "Research/OpenCode"',
         'catalog_mode = "repo"',
         "open_after_catalog = false",
+        'integration_mode = "headless"',
+        'headless_command = "ob"',
+        "sync_after_catalog = true",
+        "sync_timeout_sec = 180",
       ].join("\n"),
       "shpit.toml",
     );
@@ -24,6 +28,10 @@ describe("shpit config parsing", () => {
     expect(obsidian.notes_root).toBe("Research/OpenCode");
     expect(obsidian.catalog_mode).toBe("repo");
     expect(obsidian.open_after_catalog).toBe(false);
+    expect(obsidian.integration_mode).toBe("headless");
+    expect(obsidian.headless_command).toBe("ob");
+    expect(obsidian.sync_after_catalog).toBe(true);
+    expect(obsidian.sync_timeout_sec).toBe(180);
   });
 
   test("rejects obs command alias", () => {
@@ -43,6 +51,41 @@ describe("shpit config parsing", () => {
     expect(config.catalogMode).toBe("date");
     expect(config.notesRoot).toBe("Research/OpenCode");
     expect(config.openAfterCatalog).toBe(false);
+    expect(config.integrationMode).toBe("desktop");
+    expect(config.headlessCommand).toBe("ob");
+    expect(config.syncAfterCatalog).toBe(false);
+    expect(config.syncTimeoutSec).toBe(120);
+  });
+
+  test("enables sync_after_catalog by default in headless mode", () => {
+    const config = __testables.resolveFinalConfig({
+      obsidian: {
+        integrationMode: "headless",
+      },
+    });
+
+    expect(config.integrationMode).toBe("headless");
+    expect(config.syncAfterCatalog).toBe(true);
+  });
+
+  test("rejects invalid integration mode", () => {
+    expect(() =>
+      __testables.resolveFinalConfig({
+        obsidian: {
+          integrationMode: "mobile" as "desktop" | "headless",
+        },
+      }),
+    ).toThrow(/integration_mode/);
+  });
+
+  test("rejects non-positive sync timeout", () => {
+    expect(() =>
+      __testables.resolveFinalConfig({
+        obsidian: {
+          syncTimeoutSec: 0,
+        },
+      }),
+    ).toThrow(/sync_timeout_sec/);
   });
 });
 

@@ -46,7 +46,10 @@ This project automates Daytona sandbox setup and OpenCode execution.
 - `DAYTONA_API_KEY`
 - `DAYTONA_API_URL` for self-hosted Daytona (example: `https://daytona.example.com/api`)
 - Optional but recommended: `OPENCODE_SERVER_PASSWORD`
-- Optional: `obsidian` command in `PATH` (for Obsidian note cataloging/open)
+- Obsidian Headless CLI in `PATH` (`ob`, installed via `npm install -g obsidian-headless`) for non-disruptive sync
+- Obsidian Catalyst access (Headless Sync is currently open beta)
+- Active Obsidian Sync subscription (required for `ob sync-*`)
+- Optional: `obsidian` desktop CLI in `PATH` if you explicitly use desktop integration/open-after-catalog
 
 ---
 
@@ -94,6 +97,9 @@ It sets up:
 
 - `~/.config/opencode/shpit.toml` for shared preferences
 - `~/.config/opencode/.env` for optional credential storage
+- headless preflight checks when `obsidian.integration_mode = "headless"`:
+  - verifies `ob` command is installed
+  - runs `ob sync-list-remote` to validate account/login/sync access
 
 No provider API key is required if you only use free `opencode/*` models (for example `opencode/minimax-m2.5-free`).
 
@@ -105,14 +111,31 @@ Example config:
 [obsidian]
 enabled = true
 command = "obsidian"
+integration_mode = "headless" # headless | desktop
+headless_command = "ob"
 vault_path = "/absolute/path/to/vault"
 notes_root = "Research/OpenCode"
 catalog_mode = "date" # date | repo
-open_after_catalog = false
+sync_after_catalog = true
+sync_timeout_sec = 120
+open_after_catalog = false # desktop mode only
 ```
 
 Project-level `shpit.toml` or `.shpit.toml` overrides global config.
-The configured command must be `obsidian` (not `obs`).
+The configured desktop command must be `obsidian` (not `obs`).
+
+Headless setup is one-time per local vault path:
+
+```bash
+npm install -g obsidian-headless
+ob login
+ob sync-list-remote
+mkdir -p ~/vaults/my-headless-vault
+ob sync-setup --vault "My Vault" --path ~/vaults/my-headless-vault
+ob sync --path ~/vaults/my-headless-vault
+```
+
+Do not run desktop Sync and Headless Sync on the same device for the same vault path; use a dedicated local path for headless workflows.
 
 ---
 
@@ -121,7 +144,7 @@ The configured command must be `obsidian` (not `obs`).
 | Command | Purpose |
 |---|---|
 | `scripts/install-gh-package.sh` | Bootstrap install from GitHub Packages on a new machine |
-| `bun run setup` | Guided setup for shared config/env and Obsidian cataloging |
+| `bun run setup` | Guided setup for shared config/env, Obsidian mode selection, and headless preflight checks |
 | `bun run start` | Launch OpenCode web in a Daytona sandbox |
 | `bun run analyze -- --input example.md` | Analyze repos listed in a file |
 | `bun run analyze -- <url1> <url2>` | Analyze direct repo URLs |
@@ -162,7 +185,7 @@ bun run start -- --no-open
 - Auto-installs missing `git` and `node/npm` inside sandbox
 - Forwards provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `OPENROUTER_*`, `ZHIPU_*`, `MINIMAX_*`, etc.)
 - Syncs local OpenCode config files from `~/.config/opencode` when present
-- Auto-catalogs findings into Obsidian when enabled via `shpit.toml`
+- Auto-catalogs findings into Obsidian when enabled via `shpit.toml`, with optional automatic `ob sync` in headless mode
 
 ### Examples
 

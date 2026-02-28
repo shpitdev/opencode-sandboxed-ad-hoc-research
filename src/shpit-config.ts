@@ -15,6 +15,10 @@ type PartialObsidianConfig = {
   notesRoot?: string;
   catalogMode?: "date" | "repo";
   openAfterCatalog?: boolean;
+  integrationMode?: "desktop" | "headless";
+  headlessCommand?: string;
+  syncAfterCatalog?: boolean;
+  syncTimeoutSec?: number;
 };
 
 type PartialShpitConfig = {
@@ -33,6 +37,10 @@ export type ResolvedShpitConfig = {
     notesRoot: string;
     catalogMode: "date" | "repo";
     openAfterCatalog: boolean;
+    integrationMode: "desktop" | "headless";
+    headlessCommand: string;
+    syncAfterCatalog: boolean;
+    syncTimeoutSec: number;
   };
 };
 
@@ -221,6 +229,10 @@ function asBoolean(value: ParsedTomlValue | undefined): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function asInteger(value: ParsedTomlValue | undefined): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+}
+
 function toPartialConfig(parsed: ParsedTomlTable): PartialShpitConfig {
   const obsidian = asTable(parsed.obsidian);
 
@@ -233,6 +245,13 @@ function toPartialConfig(parsed: ParsedTomlTable): PartialShpitConfig {
           notesRoot: asString(obsidian.notes_root),
           catalogMode: asString(obsidian.catalog_mode) as "date" | "repo" | undefined,
           openAfterCatalog: asBoolean(obsidian.open_after_catalog),
+          integrationMode: asString(obsidian.integration_mode) as
+            | "desktop"
+            | "headless"
+            | undefined,
+          headlessCommand: asString(obsidian.headless_command),
+          syncAfterCatalog: asBoolean(obsidian.sync_after_catalog),
+          syncTimeoutSec: asInteger(obsidian.sync_timeout_sec),
         }
       : undefined,
   };
@@ -261,6 +280,23 @@ function normalizeObsidianCommand(command: string | undefined): string {
     );
   }
   return normalized;
+}
+
+function normalizeIntegrationMode(
+  mode: string | undefined,
+): ResolvedShpitConfig["obsidian"]["integrationMode"] {
+  const normalized = (mode ?? "desktop").trim() || "desktop";
+  if (normalized !== "desktop" && normalized !== "headless") {
+    throw new Error(
+      `Invalid obsidian.integration_mode: ${normalized}. Expected "desktop" or "headless".`,
+    );
+  }
+  return normalized;
+}
+
+function normalizeHeadlessCommand(command: string | undefined): string {
+  const normalized = (command ?? "ob").trim();
+  return normalized || "ob";
 }
 
 function resolveVaultPath(value: string | undefined): string | undefined {
@@ -333,6 +369,14 @@ function resolveFinalConfig(partial: PartialShpitConfig): ResolvedShpitConfig["o
     throw new Error(`Invalid obsidian.catalog_mode: ${catalogMode}. Expected "date" or "repo".`);
   }
 
+  const integrationMode = normalizeIntegrationMode(obsidian.integrationMode);
+  const syncTimeoutSec = obsidian.syncTimeoutSec ?? 120;
+  if (!Number.isInteger(syncTimeoutSec) || syncTimeoutSec <= 0) {
+    throw new Error(
+      `Invalid obsidian.sync_timeout_sec: ${syncTimeoutSec}. Expected a positive integer.`,
+    );
+  }
+
   return {
     enabled: obsidian.enabled ?? false,
     command: normalizeObsidianCommand(obsidian.command),
@@ -340,6 +384,10 @@ function resolveFinalConfig(partial: PartialShpitConfig): ResolvedShpitConfig["o
     notesRoot: (obsidian.notesRoot ?? DEFAULT_NOTES_ROOT).trim() || DEFAULT_NOTES_ROOT,
     catalogMode,
     openAfterCatalog: obsidian.openAfterCatalog ?? false,
+    integrationMode,
+    headlessCommand: normalizeHeadlessCommand(obsidian.headlessCommand),
+    syncAfterCatalog: obsidian.syncAfterCatalog ?? integrationMode === "headless",
+    syncTimeoutSec,
   };
 }
 
