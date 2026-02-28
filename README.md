@@ -195,9 +195,9 @@ bun run analyze -- --input example.md --out-dir findings-confidence-3 --analyze-
 ## Release Automation
 
 - `main` merges trigger `.github/workflows/publish-package.yml` automatically (no manual dispatch).
-- The workflow publishes the current package version to GitHub Packages with npm tag `next`.
 - Versioning is enforced as patch-only `0.0.x` and starts at `0.0.1`.
-- After publish, the workflow opens a PR that bumps `package.json` to the next patch (for example `0.0.1 -> 0.0.2`).
+- Normal PR merges publish a prerelease for the next patch with npm tag `next` (for example `0.0.2-next.<run>.<attempt>.<sha>`), then keep/create a draft bump PR (for example `0.0.1 -> 0.0.2`).
+- Merging the automated bump PR publishes that bumped version as the public release (`latest`) and does not create another `.next` publish.
 
 ---
 
