@@ -3,6 +3,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ResolvedShpitConfig } from "./shpit-config.js";
 
+type CommandResult = {
+  exitCode: number | null;
+  output: string;
+  timedOut: boolean;
+  error?: string;
+};
+
 type CatalogInput = {
   config: ResolvedShpitConfig;
   slug: string;
@@ -55,12 +62,31 @@ function buildRelativeNotePath(params: {
   return path.join(notesRoot, year, month, `${day}-${safeRunLabel}.md`);
 }
 
+function resolveNotePathWithinVault(vaultPath: string, relativeNotePath: string): string {
+  const resolvedVaultPath = path.resolve(vaultPath);
+  const resolvedNotePath = path.resolve(resolvedVaultPath, relativeNotePath);
+  const relative = path.relative(resolvedVaultPath, resolvedNotePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Refusing to write outside Obsidian vault. Computed path: ${resolvedNotePath}`);
+  }
+  return resolvedNotePath;
+}
+
 function escapeYaml(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function toMarkdownPath(value: string): string {
   return value.replace(/\\/g, "/");
+}
+
+function summarizeCommandOutput(output: string): string {
+  const trimmed = output.trim();
+  if (!trimmed) {
+    return "no command output";
+  }
+  const snippet = trimmed.split(/\r?\n/).slice(-8).join(" | ");
+  return snippet.length > 600 ? `${snippet.slice(0, 600)}...` : snippet;
 }
 
 function buildCatalogNote(input: {
@@ -140,6 +166,78 @@ async function tryOpenInObsidian(params: {
   });
 }
 
+async function runForegroundCommand(params: {
+  command: string;
+  args: string[];
+  timeoutMs: number;
+}): Promise<CommandResult> {
+  return await new Promise<CommandResult>((resolve) => {
+    const child = spawn(params.command, params.args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const chunks: string[] = [];
+    let timedOut = false;
+
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      chunks.push(chunk.toString());
+    });
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      chunks.push(chunk.toString());
+    });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, params.timeoutMs);
+
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      resolve({
+        exitCode: null,
+        output: chunks.join(""),
+        timedOut,
+        error: String(error.message ?? error),
+      });
+    });
+
+    child.once("close", (exitCode) => {
+      clearTimeout(timer);
+      resolve({
+        exitCode,
+        output: chunks.join(""),
+        timedOut,
+      });
+    });
+  });
+}
+
+async function trySyncWithHeadless(params: {
+  command: string;
+  vaultPath: string;
+  timeoutSec: number;
+}): Promise<string | undefined> {
+  const commandResult = await runForegroundCommand({
+    command: params.command,
+    args: ["sync", "--path", params.vaultPath],
+    timeoutMs: params.timeoutSec * 1000,
+  });
+
+  if (commandResult.timedOut) {
+    return `Headless sync timed out after ${params.timeoutSec}s.`;
+  }
+
+  if (commandResult.error) {
+    return `Failed to run ${params.command} sync: ${commandResult.error}`;
+  }
+
+  if (commandResult.exitCode !== 0) {
+    return `Headless sync exited with code ${commandResult.exitCode}: ${summarizeCommandOutput(commandResult.output)}`;
+  }
+
+  return undefined;
+}
+
 export async function catalogAnalysisResult(input: CatalogInput): Promise<CatalogResult> {
   const { obsidian } = input.config;
 
@@ -165,7 +263,7 @@ export async function catalogAnalysisResult(input: CatalogInput): Promise<Catalo
     slug: input.slug,
     runLabel: input.runLabel,
   });
-  const notePath = path.join(obsidian.vaultPath, relativeNotePath);
+  const notePath = resolveNotePathWithinVault(obsidian.vaultPath, relativeNotePath);
   const findings = await readFile(input.findingsPath, "utf8");
   const note = buildCatalogNote({
     sourceUrl: input.sourceUrl,
@@ -179,28 +277,66 @@ export async function catalogAnalysisResult(input: CatalogInput): Promise<Catalo
   await mkdir(path.dirname(notePath), { recursive: true });
   await writeFile(notePath, note, "utf8");
 
+  const warnings: string[] = [];
+
+  if (obsidian.integrationMode === "headless") {
+    if (obsidian.openAfterCatalog) {
+      warnings.push(
+        '`open_after_catalog` is ignored when `obsidian.integration_mode = "headless"`.',
+      );
+    }
+
+    if (obsidian.syncAfterCatalog) {
+      const syncWarning = await trySyncWithHeadless({
+        command: obsidian.headlessCommand,
+        vaultPath: obsidian.vaultPath,
+        timeoutSec: obsidian.syncTimeoutSec,
+      });
+      if (syncWarning) {
+        warnings.push(syncWarning);
+      }
+    }
+
+    return {
+      attempted: true,
+      written: true,
+      notePath,
+      warning: warnings.length > 0 ? warnings.join(" ") : undefined,
+    };
+  }
+
+  if (obsidian.syncAfterCatalog) {
+    warnings.push('`sync_after_catalog` is ignored when `obsidian.integration_mode = "desktop"`.');
+  }
+
   if (!obsidian.openAfterCatalog) {
     return {
       attempted: true,
       written: true,
       notePath,
+      warning: warnings.length > 0 ? warnings.join(" ") : undefined,
     };
   }
 
-  const warning = await tryOpenInObsidian({
+  const openWarning = await tryOpenInObsidian({
     command: obsidian.command,
     vaultPath: obsidian.vaultPath,
     relativeNotePath,
   });
 
+  if (openWarning) {
+    warnings.push(openWarning);
+  }
+
   return {
     attempted: true,
     written: true,
     notePath,
-    warning,
+    warning: warnings.length > 0 ? warnings.join(" ") : undefined,
   };
 }
 
 export const __testables = {
   buildRelativeNotePath,
+  resolveNotePathWithinVault,
 };
