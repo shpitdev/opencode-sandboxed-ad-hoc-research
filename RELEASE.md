@@ -28,14 +28,11 @@ Workflow: `.github/workflows/publish-package.yml`
 ## Required Repository Configuration
 
 - GitHub Actions:
-  - `GITHUB_TOKEN` must keep `actions:write`, `contents:write`, `pull-requests:write`, `packages:write` permissions in `publish-package.yml`.
+  - `GITHUB_TOKEN` must keep `contents:write`, `pull-requests:write`, `packages:write` permissions in `publish-package.yml`.
 - Optional token:
   - `GH_PAT` can be set to let `create-pull-request` use a PAT instead of `GITHUB_TOKEN`.
-  - If `GH_PAT` is not available, publish automation dispatches `Check` and `ValidatePrTitle` workflows directly on the bump branch so required checks still attach to the bump PR head commit.
 - Branch governance:
   - Keep required checks enforced for PRs into `main`:
-    - `Check`
-    - `ValidatePrTitle`
     - `CodeQL`
 
 ## Verify Current Published State
