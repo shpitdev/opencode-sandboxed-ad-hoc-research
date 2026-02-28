@@ -14,14 +14,21 @@ permissions:
   packages: write
 
 jobs:
-  require-pr-merge:
-    name: Require PR Merge
+  resolve-merge-context:
+    name: Resolve Merge Context
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       pull-requests: read
+    outputs:
+      pr_number: ${{ steps.context.outputs.pr_number }}
+      pr_url: ${{ steps.context.outputs.pr_url }}
+      pr_title: ${{ steps.context.outputs.pr_title }}
+      pr_head_ref: ${{ steps.context.outputs.pr_head_ref }}
+      is_bump_pr: ${{ steps.context.outputs.is_bump_pr }}
     steps:
       - name: Ensure push commit came from merged PR
+        id: context
         uses: actions/github-script@v7
         with:
           script: |
@@ -37,6 +44,8 @@ jobs:
                           state
                           mergedAt
                           url
+                          title
+                          headRefName
                         }
                       }
                     }
@@ -95,10 +104,26 @@ jobs:
               `Publish gate passed via merged PR #${mergedPr.number} (${mergedPr.url})`,
             );
 
-  publish-and-bump:
-    name: Publish Next + Open Bump PR
+            const isBumpPr =
+              (mergedPr.headRefName ?? "").startsWith("ci/version-bump-") ||
+              /^chore:\s*bump package version to 0\\.0\\.\\d+$/i.test(
+                mergedPr.title ?? "",
+              );
+
+            core.setOutput("pr_number", String(mergedPr.number));
+            core.setOutput("pr_url", mergedPr.url ?? "");
+            core.setOutput("pr_title", mergedPr.title ?? "");
+            core.setOutput("pr_head_ref", mergedPr.headRefName ?? "");
+            core.setOutput("is_bump_pr", isBumpPr ? "true" : "false");
+
+            core.info(
+              `Resolved publish mode: ${isBumpPr ? "stable release (latest)" : "prerelease (next)"}`,
+            );
+
+  publish-and-manage-bump:
+    name: Publish Package + Manage Bump PR
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: require-pr-merge
+    needs: resolve-merge-context
     permissions:
       contents: write
       pull-requests: write
@@ -127,13 +152,26 @@ jobs:
           bun test
           bun run build
 
+      - name: Report publish strategy
+        run: |
+          echo "Merged PR #${{ needs.resolve-merge-context.outputs.pr_number }} (${{ needs.resolve-merge-context.outputs.pr_url }})"
+          echo "Head ref: ${{ needs.resolve-merge-context.outputs.pr_head_ref }}"
+          echo "Title: ${{ needs.resolve-merge-context.outputs.pr_title }}"
+          echo "Bump PR: ${{ needs.resolve-merge-context.outputs.is_bump_pr }}"
+
       - name: Resolve package metadata
         id: meta
+        env:
+          IS_BUMP_PR: ${{ needs.resolve-merge-context.outputs.is_bump_pr }}
         run: |
           node <<'NODE'
           const fs = require("node:fs");
           const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
           const match = /^0\.0\.(\d+)$/.exec(pkg.version ?? "");
+          const isBumpPr = process.env.IS_BUMP_PR === "true";
+          const runNumber = process.env.GITHUB_RUN_NUMBER ?? "0";
+          const runAttempt = process.env.GITHUB_RUN_ATTEMPT ?? "1";
+          const shortSha = (process.env.GITHUB_SHA ?? "sha").slice(0, 7);
 
           if (!pkg.name) {
             console.error("Missing package name in package.json");
@@ -147,10 +185,30 @@ jobs:
             process.exit(1);
           }
 
-          const nextVersion = `0.0.${Number(match[1]) + 1}`;
+          const stableVersion = pkg.version;
+          const nextStableVersion = `0.0.${Number(match[1]) + 1}`;
+          const prereleaseVersion = `${nextStableVersion}-next.${runNumber}.${runAttempt}.${shortSha}`;
+
+          const publishVersion = isBumpPr ? stableVersion : prereleaseVersion;
+          const publishTag = isBumpPr ? "latest" : "next";
+          const createBumpPr = isBumpPr ? "false" : "true";
+
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `name=${pkg.name}\n`);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${pkg.version}\n`);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `next_version=${nextVersion}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `stable_version=${stableVersion}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `next_stable_version=${nextStableVersion}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `publish_version=${publishVersion}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `publish_tag=${publishTag}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `create_bump_pr=${createBumpPr}\n`);
+          NODE
+
+      - name: Set package version for prerelease publish
+        if: steps.meta.outputs.create_bump_pr == 'true'
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          pkg.version = "${{ steps.meta.outputs.publish_version }}";
+          fs.writeFileSync("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
           NODE
 
       - name: Configure npm for GitHub Packages
@@ -160,12 +218,12 @@ jobs:
           npm config set @shpitdev:registry https://npm.pkg.github.com
           npm config set //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
 
-      - name: Publish package with next tag
+      - name: Publish package
         id: publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PACKAGE_REF="${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }}"
+          PACKAGE_REF="${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.publish_version }}"
 
           if npm view "$PACKAGE_REF" version --registry https://npm.pkg.github.com >/dev/null 2>&1; then
             echo "Version $PACKAGE_REF already exists in GitHub Packages; skipping publish."
@@ -173,7 +231,7 @@ jobs:
             exit 0
           fi
 
-          npm publish --registry https://npm.pkg.github.com --tag next
+          npm publish --registry https://npm.pkg.github.com --tag "${{ steps.meta.outputs.publish_tag }}"
           echo "published=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify registry install
@@ -181,7 +239,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PACKAGE_REF="${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }}"
+          PACKAGE_REF="${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.publish_version }}"
 
           mkdir -p e2e-install
           cd e2e-install
@@ -205,27 +263,30 @@ jobs:
           ./node_modules/.bin/opencode-sandboxed-research-setup --help
 
       - name: Prepare next patch bump
+        if: steps.meta.outputs.create_bump_pr == 'true'
         run: |
           node <<'NODE'
           const fs = require("node:fs");
           const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-          pkg.version = "${{ steps.meta.outputs.next_version }}";
+          pkg.version = "${{ steps.meta.outputs.next_stable_version }}";
           fs.writeFileSync("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
           NODE
 
       - name: Open bump PR
+        if: steps.meta.outputs.create_bump_pr == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          branch: ci/version-bump-${{ steps.meta.outputs.next_version }}
+          branch: ci/version-bump-${{ steps.meta.outputs.next_stable_version }}
           draft: true
           delete-branch: true
-          commit-message: "chore: bump package version to ${{ steps.meta.outputs.next_version }}"
-          title: "chore: bump package version to ${{ steps.meta.outputs.next_version }}"
+          commit-message: "chore: bump package version to ${{ steps.meta.outputs.next_stable_version }}"
+          title: "chore: bump package version to ${{ steps.meta.outputs.next_stable_version }}"
           body: |
             Automated post-publish bump.
 
-            - Published `${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }}` with npm tag `next`
-            - Next patch version prepared: `${{ steps.meta.outputs.next_version }}`
+            - Merged PR: #${{ needs.resolve-merge-context.outputs.pr_number }}
+            - Published `${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.publish_version }}` with npm tag `${{ steps.meta.outputs.publish_tag }}`
+            - Next stable version prepared: `${{ steps.meta.outputs.next_stable_version }}`
           add-paths: |
             package.json
