@@ -33,6 +33,7 @@ This project automates Daytona sandbox setup and OpenCode execution.
 - [Commands](#commands)
 - [Repository Audit Workflow](#repository-audit-workflow)
 - [Output Layout](#output-layout)
+- [Release Automation](#release-automation)
 - [Development](#development)
 - [Compatibility Notes](#compatibility-notes)
 
@@ -186,6 +187,15 @@ Example retained in this repo:
 ```bash
 bun run analyze -- --input example.md --out-dir findings-confidence-3 --analyze-timeout-sec 3600 --keep-sandbox
 ```
+
+---
+
+## Release Automation
+
+- `main` merges trigger `.github/workflows/publish-package.yml` automatically (no manual dispatch).
+- The workflow publishes the current package version to GitHub Packages with npm tag `next`.
+- Versioning is enforced as patch-only `0.0.x` and starts at `0.0.1`.
+- After publish, the workflow opens a PR that bumps `package.json` to the next patch (for example `0.0.1 -> 0.0.2`).
 
 ---
 

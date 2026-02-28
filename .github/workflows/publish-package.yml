@@ -2,18 +2,107 @@ name: Publish Package
 
 on:
   push:
-    tags:
-      - "v*"
-  workflow_dispatch:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   packages: write
 
 jobs:
-  Publish:
-    name: Publish To GitHub Packages
+  require-pr-merge:
+    name: Require PR Merge
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Ensure push commit came from merged PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const query = `
+              query($owner: String!, $repo: String!, $oid: GitObjectID!) {
+                repository(owner: $owner, name: $repo) {
+                  object(oid: $oid) {
+                    ... on Commit {
+                      oid
+                      associatedPullRequests(first: 10) {
+                        nodes {
+                          number
+                          state
+                          mergedAt
+                          url
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const maxAttempts = 6;
+            const retryDelayMs = 5000;
+
+            const findMergedPr = async () => {
+              const data = await github.graphql(query, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                oid: context.sha,
+              });
+
+              const commit = data.repository?.object;
+              if (!commit) {
+                throw new Error(`Could not load commit ${context.sha}`);
+              }
+
+              const pullRequests = commit.associatedPullRequests?.nodes ?? [];
+              return pullRequests.find(
+                (pr) =>
+                  pr.state === "MERGED" &&
+                  typeof pr.mergedAt === "string" &&
+                  pr.mergedAt.length > 0,
+              );
+            };
+
+            let mergedPr;
+            for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+              mergedPr = await findMergedPr();
+              if (mergedPr) {
+                break;
+              }
+
+              if (attempt < maxAttempts) {
+                core.info(
+                  `No merged PR associated with ${context.sha} yet (attempt ${attempt}/${maxAttempts}); retrying in ${retryDelayMs / 1000}s.`,
+                );
+                await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+              }
+            }
+
+            if (!mergedPr) {
+              core.setFailed(
+                `Direct push detected on main at ${context.sha}. Publish flow requires merged PR commits only.`,
+              );
+              return;
+            }
+
+            core.info(
+              `Publish gate passed via merged PR #${mergedPr.number} (${mergedPr.url})`,
+            );
+
+  publish-and-bump:
+    name: Publish Next + Open Bump PR
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: require-pr-merge
+    permissions:
+      contents: write
+      pull-requests: write
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,26 +127,31 @@ jobs:
           bun test
           bun run build
 
-      - name: Publish package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm publish --registry https://npm.pkg.github.com
+      - name: Resolve package metadata
+        id: meta
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const match = /^0\.0\.(\d+)$/.exec(pkg.version ?? "");
 
-  VerifyInstall:
-    name: Verify Registry Install
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: Publish
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+          if (!pkg.name) {
+            console.error("Missing package name in package.json");
+            process.exit(1);
+          }
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+          if (!match) {
+            console.error(
+              `package.json version must match 0.0.x for this release flow. Received: ${pkg.version}`,
+            );
+            process.exit(1);
+          }
+
+          const nextVersion = `0.0.${Number(match[1]) + 1}`;
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `name=${pkg.name}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${pkg.version}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `next_version=${nextVersion}\n`);
+          NODE
 
       - name: Configure npm for GitHub Packages
         env:
@@ -67,13 +161,28 @@ jobs:
           npm config set //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
           npm config set always-auth true
 
-      - name: Install published package
+      - name: Publish package with next tag
+        id: publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PACKAGE_NAME=$(node -p "require('./package.json').name")
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          PACKAGE_REF="${PACKAGE_NAME}@${PACKAGE_VERSION}"
+          PACKAGE_REF="${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }}"
+
+          if npm view "$PACKAGE_REF" version --registry https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "Version $PACKAGE_REF already exists in GitHub Packages; skipping publish."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          npm publish --registry https://npm.pkg.github.com --tag next
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify registry install
+        if: steps.publish.outputs.published == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PACKAGE_REF="${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }}"
 
           mkdir -p e2e-install
           cd e2e-install
@@ -83,16 +192,40 @@ jobs:
             if npm install "$PACKAGE_REF"; then
               break
             fi
+
             if [ "$attempt" -eq 6 ]; then
               echo "Failed to install $PACKAGE_REF after retries" >&2
               exit 1
             fi
+
             sleep 10
           done
 
-      - name: Run installed CLI binaries
-        run: |
-          cd e2e-install
           ./node_modules/.bin/opencode-sandboxed-research-analyze --help
           ./node_modules/.bin/opencode-sandboxed-research-start --help
           ./node_modules/.bin/opencode-sandboxed-research-setup --help
+
+      - name: Prepare next patch bump
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          pkg.version = "${{ steps.meta.outputs.next_version }}";
+          fs.writeFileSync("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+
+      - name: Open bump PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          branch: ci/version-bump-${{ steps.meta.outputs.next_version }}
+          delete-branch: true
+          commit-message: "chore: bump package version to ${{ steps.meta.outputs.next_version }}"
+          title: "chore: bump package version to ${{ steps.meta.outputs.next_version }}"
+          body: |
+            Automated post-publish bump.
+
+            - Published `${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }}` with npm tag `next`
+            - Next patch version prepared: `${{ steps.meta.outputs.next_version }}`
+          add-paths: |
+            package.json

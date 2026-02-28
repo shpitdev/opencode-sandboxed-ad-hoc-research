@@ -1,6 +1,6 @@
 {
   "name": "@shpitdev/opencode-sandboxed-ad-hoc-research",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Run OpenCode in Daytona sandboxes for web sessions and ad hoc repository research",
   "private": false,
   "type": "module",
