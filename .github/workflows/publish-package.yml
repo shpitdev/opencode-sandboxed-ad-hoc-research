@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
   packages: write
@@ -125,6 +126,7 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: resolve-merge-context
     permissions:
+      actions: write
       contents: write
       pull-requests: write
       packages: write
@@ -316,3 +318,22 @@ jobs:
             - Next stable version prepared: `${{ steps.meta.outputs.next_stable_version }}`
           add-paths: |
             package.json
+
+      - name: Trigger required checks for bump PR
+        if: steps.meta.outputs.create_bump_pr == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BUMP_BRANCH: ci/version-bump-${{ steps.meta.outputs.next_stable_version }}
+          BUMP_TITLE: chore: bump package version to ${{ steps.meta.outputs.next_stable_version }}
+        run: |
+          gh api \
+            --method POST \
+            "repos/${REPO}/actions/workflows/check.yml/dispatches" \
+            -f ref="${BUMP_BRANCH}"
+
+          gh api \
+            --method POST \
+            "repos/${REPO}/actions/workflows/validate-pr-title.yml/dispatches" \
+            -f ref="${BUMP_BRANCH}" \
+            -F inputs[pr_title]="${BUMP_TITLE}"
