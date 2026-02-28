@@ -59,8 +59,10 @@ curl -fsSL https://raw.githubusercontent.com/shpitdev/opencode-sandboxed-ad-hoc-
 
 It will:
 
-- ask for (or reuse) a GitHub token with `read:packages`
+- reuse `gh auth` token when available and auto-attempt `read:packages` scope refresh
+- otherwise prompt for a GitHub token with `read:packages`
 - configure `~/.npmrc` for GitHub Packages
+- skip registry auth setup automatically when installing from a local tarball path
 - install `@shpitdev/opencode-sandboxed-ad-hoc-research` globally
 - launch the guided setup flow for Daytona/model credentials
 
