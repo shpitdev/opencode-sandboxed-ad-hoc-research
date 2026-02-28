@@ -34,6 +34,7 @@ This project automates Daytona sandbox setup and OpenCode execution.
 - [Repository Audit Workflow](#repository-audit-workflow)
 - [Output Layout](#output-layout)
 - [Release Automation](#release-automation)
+- [Release Process](#release-process)
 - [Development](#development)
 - [Compatibility Notes](#compatibility-notes)
 
@@ -198,6 +199,10 @@ bun run analyze -- --input example.md --out-dir findings-confidence-3 --analyze-
 - Versioning is enforced as patch-only `0.0.x` and starts at `0.0.1`.
 - Normal PR merges publish a prerelease for the next patch with npm tag `next` (for example `0.0.2-next.<run>.<attempt>.<sha>`), then keep/create a draft bump PR (for example `0.0.1 -> 0.0.2`).
 - Merging the automated bump PR publishes that bumped version as the public release (`latest`) and does not create another `.next` publish.
+
+## Release Process
+
+Release operations, required repo settings, verification commands, and rollback steps are documented in [`RELEASE.md`](RELEASE.md).
 
 ---
 

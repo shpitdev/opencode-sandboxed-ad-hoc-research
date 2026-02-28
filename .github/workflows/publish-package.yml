@@ -234,6 +234,32 @@ jobs:
           npm publish --registry https://npm.pkg.github.com --tag "${{ steps.meta.outputs.publish_tag }}"
           echo "published=true" >> "$GITHUB_OUTPUT"
 
+      - name: Verify published dist-tag
+        if: steps.publish.outputs.published == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PACKAGE_NAME="${{ steps.meta.outputs.name }}"
+          PUBLISH_TAG="${{ steps.meta.outputs.publish_tag }}"
+          EXPECTED_VERSION="${{ steps.meta.outputs.publish_version }}"
+
+          for attempt in 1 2 3 4 5 6; do
+            ACTUAL_VERSION="$(npm view "$PACKAGE_NAME" "dist-tags.${PUBLISH_TAG}" --registry https://npm.pkg.github.com 2>/dev/null || true)"
+
+            if [ "$ACTUAL_VERSION" = "$EXPECTED_VERSION" ]; then
+              echo "Verified dist-tag ${PUBLISH_TAG}: ${PACKAGE_NAME}@${ACTUAL_VERSION}"
+              exit 0
+            fi
+
+            if [ "$attempt" -eq 6 ]; then
+              echo "Dist-tag verification failed for ${PACKAGE_NAME}" >&2
+              echo "Expected ${PUBLISH_TAG} -> ${EXPECTED_VERSION}, found '${ACTUAL_VERSION}'" >&2
+              exit 1
+            fi
+
+            sleep 5
+          done
+
       - name: Verify registry install
         if: steps.publish.outputs.published == 'true'
         env:
