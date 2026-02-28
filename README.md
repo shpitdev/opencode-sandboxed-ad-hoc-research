@@ -160,7 +160,14 @@ Useful `start` flags:
 bun run start -- --port 3000 --target us --sandbox-name opencode-dev
 bun run start -- --keep-sandbox
 bun run start -- --no-open
+bun run start -- --auto-stop-interval 60
+bun run start -- --auto-stop-interval 0 --auto-delete-interval -1
 ```
+
+`start` and `analyze` also honor these env vars when flags are omitted:
+
+- `DAYTONA_AUTO_STOP_INTERVAL` (minutes, `0` disables auto-stop)
+- `DAYTONA_AUTO_DELETE_INTERVAL` (minutes, `-1` disables auto-delete)
 
 ---
 
@@ -195,6 +202,7 @@ bun run analyze -- https://github.com/owner/repo-one https://github.com/owner/re
 bun run analyze -- --out-dir findings --model zai-coding-plan/glm-4.7-flash --target us
 bun run analyze -- --vision
 bun run analyze -- --analyze-timeout-sec 3600 --keep-sandbox
+bun run analyze -- --auto-stop-interval 30 --auto-delete-interval -1 --input example.md
 ```
 
 If no URLs and no `--input` are provided, the script uses `example.md` when it exists.

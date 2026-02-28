@@ -13,6 +13,8 @@ type CliOptions = {
   sandboxName?: string;
   createTimeoutSec: number;
   installTimeoutSec: number;
+  autoStopInterval?: number;
+  autoDeleteInterval?: number;
   target?: string;
   openUi: boolean;
 };
@@ -45,6 +47,32 @@ function parsePort(value: string): number {
   return parsed;
 }
 
+function parseAutoStopInterval(value: string | undefined, source: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(
+      `${source} must be a non-negative integer (0 disables auto-stop). Received "${value}".`,
+    );
+  }
+  return parsed;
+}
+
+function parseAutoDeleteInterval(value: string | undefined, source: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || (parsed !== -1 && parsed <= 0)) {
+    throw new Error(
+      `${source} must be -1 (disable auto-delete) or a positive integer. Received "${value}".`,
+    );
+  }
+  return parsed;
+}
+
 function parseCliOptions(): CliOptions {
   const { values } = parseArgs({
     options: {
@@ -54,6 +82,8 @@ function parseCliOptions(): CliOptions {
       "sandbox-name": { type: "string" },
       "create-timeout-sec": { type: "string", default: "180" },
       "install-timeout-sec": { type: "string", default: "900" },
+      "auto-stop-interval": { type: "string" },
+      "auto-delete-interval": { type: "string" },
       target: { type: "string" },
       "no-open": { type: "boolean", default: false },
     },
@@ -70,6 +100,8 @@ Options:
       --sandbox-name <name>      Custom sandbox name
       --create-timeout-sec <n>   Sandbox creation timeout seconds (default: 180)
       --install-timeout-sec <n>  OpenCode install timeout seconds (default: 900)
+      --auto-stop-interval <n>   Daytona auto-stop interval (minutes, 0 disables)
+      --auto-delete-interval <n> Daytona auto-delete interval (minutes, -1 disables)
       --keep-sandbox             Keep sandbox after stopping (default: false)
       --no-open                  Do not auto-open OpenCode URL
   -h, --help                     Show this help
@@ -77,12 +109,24 @@ Options:
     process.exit(0);
   }
 
+  const autoStopInterval =
+    parseAutoStopInterval(values["auto-stop-interval"], "--auto-stop-interval") ??
+    parseAutoStopInterval(process.env.DAYTONA_AUTO_STOP_INTERVAL, "DAYTONA_AUTO_STOP_INTERVAL");
+  const autoDeleteInterval =
+    parseAutoDeleteInterval(values["auto-delete-interval"], "--auto-delete-interval") ??
+    parseAutoDeleteInterval(
+      process.env.DAYTONA_AUTO_DELETE_INTERVAL,
+      "DAYTONA_AUTO_DELETE_INTERVAL",
+    );
+
   return {
     port: parsePort(values.port),
     keepSandbox: values["keep-sandbox"],
     sandboxName: values["sandbox-name"],
     createTimeoutSec: parsePositiveInt(values["create-timeout-sec"], "--create-timeout-sec"),
     installTimeoutSec: parsePositiveInt(values["install-timeout-sec"], "--install-timeout-sec"),
+    autoStopInterval,
+    autoDeleteInterval,
     target: values.target,
     openUi: !values["no-open"],
   };
@@ -410,14 +454,24 @@ async function main(): Promise<void> {
 
   try {
     console.log("[local] Creating Daytona sandbox...");
-    sandbox = await daytona.create(
-      {
-        name: options.sandboxName,
-        language: "typescript",
-        autoStopInterval: 0,
-      },
-      { timeout: options.createTimeoutSec },
-    );
+    const createParams: {
+      name?: string;
+      language: "typescript";
+      autoStopInterval?: number;
+      autoDeleteInterval?: number;
+    } = {
+      name: options.sandboxName,
+      language: "typescript",
+    };
+
+    if (options.autoStopInterval !== undefined) {
+      createParams.autoStopInterval = options.autoStopInterval;
+    }
+    if (options.autoDeleteInterval !== undefined) {
+      createParams.autoDeleteInterval = options.autoDeleteInterval;
+    }
+
+    sandbox = await daytona.create(createParams, { timeout: options.createTimeoutSec });
     console.log(`[local] Sandbox ready: ${sandbox.id}`);
 
     const userHome = (await sandbox.getUserHomeDir()) ?? "/home/daytona";
