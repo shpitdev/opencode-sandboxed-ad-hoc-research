@@ -325,7 +325,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           BUMP_BRANCH: ci/version-bump-${{ steps.meta.outputs.next_stable_version }}
-          BUMP_TITLE: chore: bump package version to ${{ steps.meta.outputs.next_stable_version }}
+          BUMP_TITLE: "chore: bump package version to ${{ steps.meta.outputs.next_stable_version }}"
         run: |
           gh api \
             --method POST \
