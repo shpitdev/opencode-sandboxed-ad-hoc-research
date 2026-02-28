@@ -3,12 +3,6 @@ name: ValidatePrTitle
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
-  workflow_dispatch:
-    inputs:
-      pr_title:
-        description: "Pull request title to validate"
-        required: true
-        type: string
 
 permissions:
   pull-requests: read
@@ -20,7 +14,7 @@ jobs:
     steps:
       - name: Validate pull request title
         env:
-          PR_TITLE: ${{ github.event_name == 'pull_request' && github.event.pull_request.title || inputs.pr_title }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           title="${PR_TITLE}"
           if [ -z "${title// /}" ]; then
