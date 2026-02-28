@@ -159,7 +159,6 @@ jobs:
         run: |
           npm config set @shpitdev:registry https://npm.pkg.github.com
           npm config set //npm.pkg.github.com/:_authToken "$NODE_AUTH_TOKEN"
-          npm config set always-auth true
 
       - name: Publish package with next tag
         id: publish
@@ -219,6 +218,7 @@ jobs:
         with:
           token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           branch: ci/version-bump-${{ steps.meta.outputs.next_version }}
+          draft: true
           delete-branch: true
           commit-message: "chore: bump package version to ${{ steps.meta.outputs.next_version }}"
           title: "chore: bump package version to ${{ steps.meta.outputs.next_version }}"
