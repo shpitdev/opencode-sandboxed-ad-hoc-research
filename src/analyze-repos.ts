@@ -14,8 +14,6 @@ type CliOptions = {
   createTimeoutSec: number;
   installTimeoutSec: number;
   analyzeTimeoutSec: number;
-  autoStopInterval?: number;
-  autoDeleteInterval?: number;
   keepSandbox: boolean;
   target?: string;
   model?: string;
@@ -23,6 +21,12 @@ type CliOptions = {
   vision: boolean;
   urls: string[];
 };
+
+const SANDBOX_LIFECYCLE_POLICY = {
+  autoStopInterval: 15,
+  autoArchiveInterval: 30,
+  autoDeleteInterval: -1,
+} as const;
 
 type DaytonaCompatClient = {
   configApi: {
@@ -50,32 +54,6 @@ function parsePositiveInt(value: string, flag: string): number {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new Error(`${flag} must be a positive integer. Received "${value}".`);
-  }
-  return parsed;
-}
-
-function parseAutoStopInterval(value: string | undefined, source: string): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(
-      `${source} must be a non-negative integer (0 disables auto-stop). Received "${value}".`,
-    );
-  }
-  return parsed;
-}
-
-function parseAutoDeleteInterval(value: string | undefined, source: string): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || (parsed !== -1 && parsed <= 0)) {
-    throw new Error(
-      `${source} must be -1 (disable auto-delete) or a positive integer. Received "${value}".`,
-    );
   }
   return parsed;
 }
@@ -206,8 +184,6 @@ function parseCliOptions(): CliOptions {
       "create-timeout-sec": { type: "string", default: "180" },
       "install-timeout-sec": { type: "string", default: "900" },
       "analyze-timeout-sec": { type: "string", default: "2400" },
-      "auto-stop-interval": { type: "string" },
-      "auto-delete-interval": { type: "string" },
       "keep-sandbox": { type: "boolean", default: false },
       target: { type: "string" },
       model: { type: "string" },
@@ -233,8 +209,6 @@ Options:
       --create-timeout-sec <n>   Sandbox creation timeout (default: 180)
       --install-timeout-sec <n>  OpenCode install timeout (default: 900)
       --analyze-timeout-sec <n>  Per-repo analysis timeout (default: 2400)
-      --auto-stop-interval <n>   Daytona auto-stop interval (minutes, 0 disables)
-      --auto-delete-interval <n> Daytona auto-delete interval (minutes, -1 disables)
       --target <name>            Daytona target override
       --model <provider/model>   OpenCode model (default: zai-coding-plan/glm-4.7-flash)
       --variant <name>           Model variant (example: xhigh)
@@ -245,24 +219,12 @@ Options:
     process.exit(0);
   }
 
-  const autoStopInterval =
-    parseAutoStopInterval(values["auto-stop-interval"], "--auto-stop-interval") ??
-    parseAutoStopInterval(process.env.DAYTONA_AUTO_STOP_INTERVAL, "DAYTONA_AUTO_STOP_INTERVAL");
-  const autoDeleteInterval =
-    parseAutoDeleteInterval(values["auto-delete-interval"], "--auto-delete-interval") ??
-    parseAutoDeleteInterval(
-      process.env.DAYTONA_AUTO_DELETE_INTERVAL,
-      "DAYTONA_AUTO_DELETE_INTERVAL",
-    );
-
   return {
     inputFile: values.input,
     outDir: values["out-dir"],
     createTimeoutSec: parsePositiveInt(values["create-timeout-sec"], "--create-timeout-sec"),
     installTimeoutSec: parsePositiveInt(values["install-timeout-sec"], "--install-timeout-sec"),
     analyzeTimeoutSec: parsePositiveInt(values["analyze-timeout-sec"], "--analyze-timeout-sec"),
-    autoStopInterval,
-    autoDeleteInterval,
     keepSandbox: values["keep-sandbox"],
     target: values.target,
     model: values.model,
@@ -660,22 +622,13 @@ async function analyzeOneRepo(params: {
       `audit-${slug}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
     ).slice(0, 63);
 
-    const createParams: {
-      name: string;
-      language: "typescript";
-      autoStopInterval?: number;
-      autoDeleteInterval?: number;
-    } = {
+    const createParams = {
       name: sandboxName,
       language: "typescript",
+      autoStopInterval: SANDBOX_LIFECYCLE_POLICY.autoStopInterval,
+      autoArchiveInterval: SANDBOX_LIFECYCLE_POLICY.autoArchiveInterval,
+      autoDeleteInterval: SANDBOX_LIFECYCLE_POLICY.autoDeleteInterval,
     };
-
-    if (options.autoStopInterval !== undefined) {
-      createParams.autoStopInterval = options.autoStopInterval;
-    }
-    if (options.autoDeleteInterval !== undefined) {
-      createParams.autoDeleteInterval = options.autoDeleteInterval;
-    }
 
     sandbox = await daytona.create(createParams, { timeout: options.createTimeoutSec });
     console.log(`[analyze] (${runPrefix}) Sandbox ready: ${sandbox.id}`);

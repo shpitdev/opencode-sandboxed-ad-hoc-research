@@ -160,14 +160,7 @@ Useful `start` flags:
 bun run start -- --port 3000 --target us --sandbox-name opencode-dev
 bun run start -- --keep-sandbox
 bun run start -- --no-open
-bun run start -- --auto-stop-interval 60
-bun run start -- --auto-stop-interval 0 --auto-delete-interval -1
 ```
-
-`start` and `analyze` also honor these env vars when flags are omitted:
-
-- `DAYTONA_AUTO_STOP_INTERVAL` (minutes, `0` disables auto-stop)
-- `DAYTONA_AUTO_DELETE_INTERVAL` (minutes, `-1` disables auto-delete)
 
 ---
 
@@ -192,6 +185,7 @@ bun run start -- --auto-stop-interval 0 --auto-delete-interval -1
 - Auto-installs missing `git` and `node/npm` inside sandbox
 - Forwards provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `OPENROUTER_*`, `ZHIPU_*`, `MINIMAX_*`, etc.)
 - Syncs local OpenCode config files from `~/.config/opencode` when present
+- Uses a fixed Daytona lifecycle policy: auto-stop after 15 minutes, auto-archive after 30 minutes, auto-delete disabled
 - Auto-catalogs findings into Obsidian when enabled via `shpit.toml`, with optional automatic `ob sync` in headless mode
 
 ### Examples
@@ -202,7 +196,6 @@ bun run analyze -- https://github.com/owner/repo-one https://github.com/owner/re
 bun run analyze -- --out-dir findings --model zai-coding-plan/glm-4.7-flash --target us
 bun run analyze -- --vision
 bun run analyze -- --analyze-timeout-sec 3600 --keep-sandbox
-bun run analyze -- --auto-stop-interval 30 --auto-delete-interval -1 --input example.md
 ```
 
 If no URLs and no `--input` are provided, the script uses `example.md` when it exists.
