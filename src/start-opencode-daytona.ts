@@ -17,6 +17,12 @@ type CliOptions = {
   openUi: boolean;
 };
 
+const SANDBOX_LIFECYCLE_POLICY = {
+  autoStopInterval: 15,
+  autoArchiveInterval: 30,
+  autoDeleteInterval: -1,
+} as const;
+
 type LogCursor = { value: string };
 type DaytonaCompatClient = {
   configApi: {
@@ -410,14 +416,15 @@ async function main(): Promise<void> {
 
   try {
     console.log("[local] Creating Daytona sandbox...");
-    sandbox = await daytona.create(
-      {
-        name: options.sandboxName,
-        language: "typescript",
-        autoStopInterval: 0,
-      },
-      { timeout: options.createTimeoutSec },
-    );
+    const createParams = {
+      name: options.sandboxName,
+      language: "typescript",
+      autoStopInterval: SANDBOX_LIFECYCLE_POLICY.autoStopInterval,
+      autoArchiveInterval: SANDBOX_LIFECYCLE_POLICY.autoArchiveInterval,
+      autoDeleteInterval: SANDBOX_LIFECYCLE_POLICY.autoDeleteInterval,
+    };
+
+    sandbox = await daytona.create(createParams, { timeout: options.createTimeoutSec });
     console.log(`[local] Sandbox ready: ${sandbox.id}`);
 
     const userHome = (await sandbox.getUserHomeDir()) ?? "/home/daytona";

@@ -22,6 +22,12 @@ type CliOptions = {
   urls: string[];
 };
 
+const SANDBOX_LIFECYCLE_POLICY = {
+  autoStopInterval: 15,
+  autoArchiveInterval: 30,
+  autoDeleteInterval: -1,
+} as const;
+
 type DaytonaCompatClient = {
   configApi: {
     configControllerGetConfig: () => Promise<{
@@ -615,14 +621,16 @@ async function analyzeOneRepo(params: {
     const sandboxName = sanitizeSlug(
       `audit-${slug}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
     ).slice(0, 63);
-    sandbox = await daytona.create(
-      {
-        name: sandboxName,
-        language: "typescript",
-        autoStopInterval: 0,
-      },
-      { timeout: options.createTimeoutSec },
-    );
+
+    const createParams = {
+      name: sandboxName,
+      language: "typescript",
+      autoStopInterval: SANDBOX_LIFECYCLE_POLICY.autoStopInterval,
+      autoArchiveInterval: SANDBOX_LIFECYCLE_POLICY.autoArchiveInterval,
+      autoDeleteInterval: SANDBOX_LIFECYCLE_POLICY.autoDeleteInterval,
+    };
+
+    sandbox = await daytona.create(createParams, { timeout: options.createTimeoutSec });
     console.log(`[analyze] (${runPrefix}) Sandbox ready: ${sandbox.id}`);
 
     const userHome = (await sandbox.getUserHomeDir()) ?? "/home/daytona";

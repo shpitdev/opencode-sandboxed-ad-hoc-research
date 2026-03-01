@@ -185,6 +185,7 @@ bun run start -- --no-open
 - Auto-installs missing `git` and `node/npm` inside sandbox
 - Forwards provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `OPENROUTER_*`, `ZHIPU_*`, `MINIMAX_*`, etc.)
 - Syncs local OpenCode config files from `~/.config/opencode` when present
+- Uses a fixed Daytona lifecycle policy: auto-stop after 15 minutes, auto-archive after 30 minutes, auto-delete disabled
 - Auto-catalogs findings into Obsidian when enabled via `shpit.toml`, with optional automatic `ob sync` in headless mode
 
 ### Examples
