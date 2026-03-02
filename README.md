@@ -185,6 +185,9 @@ bun run start -- --no-open
 - Auto-installs missing `git` and `node/npm` inside sandbox
 - Forwards provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `OPENROUTER_*`, `ZHIPU_*`, `MINIMAX_*`, etc.)
 - Syncs local OpenCode config files from `~/.config/opencode` when present
+- Syncs local OpenCode OAuth auth file (`~/.local/share/opencode/auth.json`) into sandbox with `chmod 600` when present
+- When using `anthropic/*` models, runs `opencode models anthropic` preflight inside sandbox and fails early if the requested model is unavailable
+- Produces more skimmable reports with concise summary bullets, sentence-fragment-friendly style, and an ASCII logic/data-flow diagram section
 - Uses a fixed Daytona lifecycle policy: auto-stop after 15 minutes, auto-archive after 30 minutes, auto-delete disabled
 - Auto-catalogs findings into Obsidian when enabled via `shpit.toml`, with optional automatic `ob sync` in headless mode
 
@@ -208,6 +211,7 @@ If no URLs and no `--input` are provided, the script uses `example.md` when it e
 - `<out-dir>/<NN-slug>/findings.md` - final report for each repository
 - `<out-dir>/<NN-slug>/README.*` - copied repository README (if found)
 - `<out-dir>/<NN-slug>/opencode-run.log` - raw OpenCode run output
+- `<out-dir>/<NN-slug>/opencode-models-anthropic.log` - Anthropic model-list preflight output (only when `anthropic/*` model is requested)
 
 Example retained in this repo:
 

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { buildInstallOpencodeCommand, buildOpencodeRunCommand } from "./opencode-cli.js";
+import {
+  buildInstallOpencodeCommand,
+  buildOpencodeModelsCommand,
+  buildOpencodeRunCommand,
+} from "./opencode-cli.js";
 
 describe("buildInstallOpencodeCommand", () => {
   test("tries bun first and falls back to npm", () => {
@@ -32,5 +36,19 @@ describe("buildOpencodeRunCommand", () => {
     expect(command).toContain("--model 'zai-coding-plan/glm-4.7-flash'");
     expect(command).toContain("--variant 'high'");
     expect(command).not.toContain("--dir");
+  });
+});
+
+describe("buildOpencodeModelsCommand", () => {
+  test("builds provider model-list command with forwarded env", () => {
+    const command = buildOpencodeModelsCommand({
+      resolveOpencodeBinCommand: "command -v opencode",
+      provider: "anthropic",
+      forwardedEnvEntries: [["OPENROUTER_API_KEY", "or-key"]],
+    });
+
+    expect(command).toContain('OPENCODE_BIN="$(command -v opencode)"');
+    expect(command).toContain("env OPENROUTER_API_KEY='or-key'");
+    expect(command).toContain("\"$OPENCODE_BIN\" models 'anthropic'");
   });
 });
