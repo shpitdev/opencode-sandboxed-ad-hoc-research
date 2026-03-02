@@ -5,7 +5,11 @@ import { parseArgs } from "node:util";
 import { Daytona, type Sandbox } from "@daytonaio/sdk";
 import { resolveAnalyzeModel } from "./analyze-model.js";
 import { catalogAnalysisResult } from "./obsidian-catalog.js";
-import { buildInstallOpencodeCommand, buildOpencodeRunCommand } from "./opencode-cli.js";
+import {
+  buildInstallOpencodeCommand,
+  buildOpencodeModelsCommand,
+  buildOpencodeRunCommand,
+} from "./opencode-cli.js";
 import { loadConfiguredEnv, type ResolvedShpitConfig, resolveShpitConfig } from "./shpit-config.js";
 
 type CliOptions = {
@@ -173,6 +177,52 @@ async function getExistingLocalOpencodeConfigFiles(): Promise<string[]> {
     }
   }
   return existing;
+}
+
+function getLocalOpencodeAuthCandidates(): string[] {
+  const home = process.env.HOME;
+  if (!home) {
+    return [];
+  }
+  return [path.join(home, ".local", "share", "opencode", "auth.json")];
+}
+
+async function getExistingLocalOpencodeAuthFiles(): Promise<string[]> {
+  const candidates = getLocalOpencodeAuthCandidates();
+  const existing: string[] = [];
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) {
+      existing.push(candidate);
+    }
+  }
+  return existing;
+}
+
+function modelProvider(modelId: string): string | undefined {
+  const slashIndex = modelId.indexOf("/");
+  if (slashIndex <= 0) {
+    return undefined;
+  }
+  return modelId.slice(0, slashIndex).toLowerCase();
+}
+
+function parseModelListOutput(output: string): string[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9._-]*$/i.test(line));
+}
+
+function normalizeModelId(modelId: string): string {
+  return modelId.trim().toLowerCase().replace(/[._]/g, "-");
+}
+
+function findNormalizedModelMatch(
+  requestedModel: string,
+  availableModels: string[],
+): string | undefined {
+  const normalizedRequested = normalizeModelId(requestedModel);
+  return availableModels.find((model) => normalizeModelId(model) === normalizedRequested);
 }
 
 function parseCliOptions(): CliOptions {
@@ -357,6 +407,7 @@ function detectOpencodeFatalError(output: string): string | undefined {
     /API key is missing/i,
     /AI_LoadAPIKeyError/i,
     /AuthenticationError/i,
+    /Token refresh failed/i,
   ];
 
   for (const line of lines) {
@@ -370,7 +421,10 @@ function detectOpencodeFatalError(output: string): string | undefined {
 }
 
 function hasReadyResponse(output: string): boolean {
-  return /\bready\b/i.test(output);
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim().toLowerCase())
+    .some((line) => line === "ready");
 }
 
 async function withRetries<T>(params: {
@@ -576,23 +630,29 @@ function buildAnalysisPrompt(params: { inputUrl: string; reportPath: string }): 
     "1. Input URL",
     "2. Claimed Purpose (from README)",
     "3. Reality Check Summary",
+    "   - Keep this very concise and easy to scan (4-7 bullets max).",
+    "   - Sentence fragments are allowed and encouraged when clearer.",
     "4. More Accurate Title + Description",
-    "5. Functionality Breakdown (logically grouped)",
+    "5. How It Works (logic walkthrough)",
+    "   - Explain the end-to-end flow in plain terms.",
+    "   - Include at least one ASCII diagram that maps key components and data flow.",
+    "6. Functionality Breakdown (logically grouped)",
     "   - For each group: what exists, what's solid, what's partial/sloppy, with file-path evidence.",
-    "6. Runtime Validation",
+    "7. Runtime Validation",
     "   - Commands run, key logs/output, blockers.",
-    "7. Quality Assessment",
+    "8. Quality Assessment",
     "   - correctness, maintainability, test quality, production-readiness risks.",
-    "8. Usefulness & Value Judgment",
+    "9. Usefulness & Value Judgment",
     "   - who should use it, who should not, where it is valuable.",
-    "9. Better Alternatives",
+    "10. Better Alternatives",
     "   - at least 3 alternatives with links and why they are better for specific scenarios.",
-    "10. Final Verdict",
+    "11. Final Verdict",
     "   - completeness score (0-10) and practical value score (0-10), with rationale.",
     "",
     "Constraints:",
     "- Be direct and specific.",
-    "- Use short bullet lists where appropriate.",
+    "- Prefer concise bullets over long prose paragraphs.",
+    "- Sentence fragments are acceptable.",
     "- If something cannot be validated, state it explicitly.",
     "- Save only the final report file.",
   ].join("\n");
@@ -637,6 +697,7 @@ async function analyzeOneRepo(params: {
     const remoteRepoDir = `${userHome}/audit/${slug}`;
     const remoteReportPath = `${remoteRepoDir}/.opencode-audit-findings.md`;
     const remoteOpencodeConfigDir = `${userHome}/.config/opencode`;
+    const remoteOpencodeShareDir = `${userHome}/.local/share/opencode`;
 
     const localOpencodeConfigFiles = await getExistingLocalOpencodeConfigFiles();
     if (localOpencodeConfigFiles.length > 0) {
@@ -657,6 +718,37 @@ async function analyzeOneRepo(params: {
       console.warn(
         `[analyze] (${runPrefix}) No local OpenCode config files found at ~/.config/opencode; sandbox run may require explicit provider env vars.`,
       );
+    }
+
+    const localOpencodeAuthFiles = await getExistingLocalOpencodeAuthFiles();
+    if (localOpencodeAuthFiles.length > 0) {
+      await requireSuccess(
+        sandbox,
+        `mkdir -p ${shellEscape(remoteOpencodeShareDir)} && chmod 700 ${shellEscape(remoteOpencodeShareDir)}`,
+        "Create OpenCode auth directory",
+        30,
+      );
+
+      for (const localAuthFile of localOpencodeAuthFiles) {
+        const remoteAuthFile = `${remoteOpencodeShareDir}/${path.basename(localAuthFile)}`;
+        await uploadFileWithRetries(sandbox, localAuthFile, remoteAuthFile);
+        await requireSuccess(
+          sandbox,
+          `chmod 600 ${shellEscape(remoteAuthFile)}`,
+          `Harden ${path.basename(localAuthFile)} permissions`,
+          30,
+        );
+      }
+
+      console.log(
+        `[analyze] (${runPrefix}) Synced ${localOpencodeAuthFiles.length} local OpenCode auth file(s) into sandbox.`,
+      );
+
+      if (options.keepSandbox) {
+        console.warn(
+          `[analyze] (${runPrefix}) OAuth auth files were synced and --keep-sandbox is enabled. Remove ${remoteOpencodeShareDir}/auth.json when done.`,
+        );
+      }
     }
 
     await requireSuccess(sandbox, buildEnsureGitCommand(), "Ensure git", options.installTimeoutSec);
@@ -695,9 +787,10 @@ async function analyzeOneRepo(params: {
     const hasProviderCredential = forwardedEnvEntries.some(
       ([name]) => !name.startsWith("OPENCODE_"),
     );
-    if (!hasProviderCredential) {
+    const hasOAuthAuthFile = localOpencodeAuthFiles.length > 0;
+    if (!hasProviderCredential && !hasOAuthAuthFile) {
       console.warn(
-        `[analyze] (${runPrefix}) No model provider env vars detected locally (OPENAI_*, ANTHROPIC_*, ZHIPU_*, etc). OpenCode may fail or block.`,
+        `[analyze] (${runPrefix}) No model provider env vars or local OAuth auth file detected. OpenCode may fail or block.`,
       );
     }
     const selectedModel = resolveAnalyzeModel({
@@ -705,9 +798,79 @@ async function analyzeOneRepo(params: {
       variant: options.variant,
       vision: options.vision,
     });
+    let resolvedModelId = selectedModel.model;
+    const requestedProvider = modelProvider(selectedModel.model);
+    const hasAnthropicEnvCredential = forwardedEnvEntries.some(([name]) =>
+      name.startsWith("ANTHROPIC_"),
+    );
+
+    if (
+      requestedProvider === "anthropic" &&
+      !hasAnthropicEnvCredential &&
+      localOpencodeAuthFiles.length === 0
+    ) {
+      throw new Error(
+        "Anthropic model selected, but no ANTHROPIC_* env var or ~/.local/share/opencode/auth.json was found to authenticate inside the sandbox.",
+      );
+    }
+
     console.log(
       `[analyze] (${runPrefix}) Model: ${selectedModel.model}${selectedModel.variant ? ` (variant: ${selectedModel.variant})` : ""}`,
     );
+
+    if (requestedProvider === "anthropic") {
+      console.log(`[analyze] (${runPrefix}) Verifying Anthropic provider access...`);
+      const anthropicModelsCommand = buildOpencodeModelsCommand({
+        resolveOpencodeBinCommand: resolveOpencodeBin,
+        provider: "anthropic",
+        forwardedEnvEntries,
+      });
+      const anthropicModelsResult = await runCommand(sandbox, anthropicModelsCommand, 120);
+      const anthropicModelsOutput = anthropicModelsResult.output;
+      await writeFile(
+        path.join(localDir, "opencode-models-anthropic.log"),
+        anthropicModelsOutput,
+        "utf8",
+      );
+
+      if (anthropicModelsResult.exitCode !== 0) {
+        const preview = anthropicModelsOutput.split("\n").slice(-120).join("\n");
+        throw new Error(
+          `Anthropic provider preflight failed (exit code ${anthropicModelsResult.exitCode}).\n${preview}`,
+        );
+      }
+
+      const availableAnthropicModels = parseModelListOutput(anthropicModelsOutput).filter(
+        (model) => modelProvider(model) === "anthropic",
+      );
+
+      if (availableAnthropicModels.length === 0) {
+        throw new Error(
+          "Anthropic provider preflight returned no models. Verify OpenCode OAuth session and retry.",
+        );
+      }
+
+      const hasExactMatch = availableAnthropicModels.some(
+        (model) => model.toLowerCase() === selectedModel.model.toLowerCase(),
+      );
+      if (!hasExactMatch) {
+        const normalizedMatch = findNormalizedModelMatch(
+          selectedModel.model,
+          availableAnthropicModels,
+        );
+        if (normalizedMatch) {
+          resolvedModelId = normalizedMatch;
+          console.warn(
+            `[analyze] (${runPrefix}) Requested model ${selectedModel.model} not found exactly. Using ${normalizedMatch} from available Anthropic models.`,
+          );
+        } else {
+          const preview = availableAnthropicModels.slice(0, 12).join(", ");
+          throw new Error(
+            `Requested Anthropic model ${selectedModel.model} is unavailable in sandbox auth context. Available examples: ${preview}`,
+          );
+        }
+      }
+    }
 
     const preflightPrompt = "Reply with exactly one word: ready";
     const preflightTimeoutSec = Math.max(
@@ -718,7 +881,7 @@ async function analyzeOneRepo(params: {
       resolveOpencodeBinCommand: resolveOpencodeBin,
       workingDir: remoteRepoDir,
       prompt: preflightPrompt,
-      model: selectedModel.model,
+      model: resolvedModelId,
       variant: selectedModel.variant,
       forwardedEnvEntries,
     });
@@ -743,7 +906,7 @@ async function analyzeOneRepo(params: {
       resolveOpencodeBinCommand: resolveOpencodeBin,
       workingDir: remoteRepoDir,
       prompt,
-      model: selectedModel.model,
+      model: resolvedModelId,
       variant: selectedModel.variant,
       forwardedEnvEntries,
     });

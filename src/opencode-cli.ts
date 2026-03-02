@@ -7,8 +7,18 @@ type BuildRunCommandInput = {
   forwardedEnvEntries?: Array<[string, string]>;
 };
 
+type BuildModelsCommandInput = {
+  resolveOpencodeBinCommand: string;
+  provider: string;
+  forwardedEnvEntries?: Array<[string, string]>;
+};
+
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function buildForwardedEnvArgs(entries: Array<[string, string]> | undefined): string {
+  return (entries ?? []).map(([name, value]) => `${name}=${shellEscape(value)}`).join(" ");
 }
 
 export function buildInstallOpencodeCommand(): string {
@@ -25,14 +35,21 @@ export function buildInstallOpencodeCommand(): string {
 export function buildOpencodeRunCommand(input: BuildRunCommandInput): string {
   const modelArg = ` --model ${shellEscape(input.model)}`;
   const variantArg = input.variant ? ` --variant ${shellEscape(input.variant)}` : "";
-  const forwardedEnvArgs = (input.forwardedEnvEntries ?? [])
-    .map(([name, value]) => `${name}=${shellEscape(value)}`)
-    .join(" ");
+  const forwardedEnvArgs = buildForwardedEnvArgs(input.forwardedEnvEntries);
 
   return (
     `OPENCODE_BIN="$(${input.resolveOpencodeBinCommand})"; ` +
     `cd ${shellEscape(input.workingDir)} && ` +
     `${forwardedEnvArgs ? `env ${forwardedEnvArgs} ` : ""}` +
     `"${"$"}OPENCODE_BIN" run --print-logs${modelArg}${variantArg} ${shellEscape(input.prompt)}`
+  );
+}
+
+export function buildOpencodeModelsCommand(input: BuildModelsCommandInput): string {
+  const forwardedEnvArgs = buildForwardedEnvArgs(input.forwardedEnvEntries);
+  return (
+    `OPENCODE_BIN="$(${input.resolveOpencodeBinCommand})"; ` +
+    `${forwardedEnvArgs ? `env ${forwardedEnvArgs} ` : ""}` +
+    `"${"$"}OPENCODE_BIN" models ${shellEscape(input.provider)}`
   );
 }
