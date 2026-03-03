@@ -12,11 +12,13 @@ export type ResolvedAnalyzeModel = {
 };
 
 export function resolveAnalyzeModel(input: AnalyzeModelInput): ResolvedAnalyzeModel {
+  const modelOverride = input.model ?? process.env.OPENCODE_ANALYZE_MODEL;
   const defaultModel = input.vision
     ? (process.env.OPENCODE_ANALYZE_VISION_MODEL ?? "zai-coding-plan/glm-4.6v")
-    : "zai-coding-plan/glm-4.7-flash";
-  const model = input.model ?? process.env.OPENCODE_ANALYZE_MODEL ?? defaultModel;
-  const variant = input.variant ?? process.env.OPENCODE_ANALYZE_VARIANT;
+    : "openai/gpt-5.3-codex";
+  const model = modelOverride ?? defaultModel;
+  const defaultVariant = !input.vision && !modelOverride ? "high" : undefined;
+  const variant = input.variant ?? process.env.OPENCODE_ANALYZE_VARIANT ?? defaultVariant;
 
   return {
     model,

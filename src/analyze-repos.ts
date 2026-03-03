@@ -116,6 +116,13 @@ function slugFromRepoUrl(url: string): string {
   return sanitizeSlug(`${owner}-${repo}`);
 }
 
+function formatDatePrefix(date: Date): string {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function normalizeUrlCandidate(raw: string): string | undefined {
   const cleaned = raw.trim().replace(/[),.;]+$/g, "");
   if (!cleaned.startsWith("http://") && !cleaned.startsWith("https://")) {
@@ -250,7 +257,7 @@ function parseCliOptions(): CliOptions {
 Examples:
   bun run analyze -- --input example.md
   bun run analyze -- https://github.com/agenticnotetaking/arscontexta
-  bun run analyze -- --input links.md --out-dir findings --model zai-coding-plan/glm-4.7-flash
+  bun run analyze -- --input links.md --out-dir findings --model openai/gpt-5.3-codex --variant high
   bun run analyze -- --vision
 
 Options:
@@ -260,8 +267,8 @@ Options:
       --install-timeout-sec <n>  OpenCode install timeout (default: 900)
       --analyze-timeout-sec <n>  Per-repo analysis timeout (default: 2400)
       --target <name>            Daytona target override
-      --model <provider/model>   OpenCode model (default: zai-coding-plan/glm-4.7-flash)
-      --variant <name>           Model variant (example: xhigh)
+      --model <provider/model>   OpenCode model (default: openai/gpt-5.3-codex)
+      --variant <name>           Model variant (default: high, when using built-in default model)
       --vision                   Prefer vision-capable default model (zai-coding-plan/glm-4.6v)
       --keep-sandbox             Keep each sandbox instead of deleting it
   -h, --help                     Show this help
@@ -676,7 +683,8 @@ async function analyzeOneRepo(params: {
   const { daytona, options, config, url, index, total } = params;
   const slug = slugFromRepoUrl(url);
   const runPrefix = `${String(index + 1).padStart(2, "0")}-${slug}`;
-  const localDir = path.join(options.outDir, runPrefix);
+  const datedRunPrefix = `${formatDatePrefix(new Date())}-${runPrefix}`;
+  const localDir = path.join(options.outDir, datedRunPrefix);
   const findingsPath = path.join(localDir, "findings.md");
   let readmePath: string | undefined;
 

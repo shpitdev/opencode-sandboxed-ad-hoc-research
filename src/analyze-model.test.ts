@@ -20,8 +20,8 @@ describe("resolveAnalyzeModel", () => {
     delete process.env.OPENCODE_ANALYZE_VISION_MODEL;
 
     const resolved = resolveAnalyzeModel({});
-    expect(resolved.model).toBe("zai-coding-plan/glm-4.7-flash");
-    expect(resolved.variant).toBeUndefined();
+    expect(resolved.model).toBe("openai/gpt-5.3-codex");
+    expect(resolved.variant).toBe("high");
   });
 
   test("uses vision default when requested", () => {
@@ -31,6 +31,15 @@ describe("resolveAnalyzeModel", () => {
 
     const resolved = resolveAnalyzeModel({ vision: true });
     expect(resolved.model).toBe("zai-coding-plan/glm-4.6v");
+    expect(resolved.variant).toBeUndefined();
+  });
+
+  test("does not force default variant when model is overridden by env", () => {
+    process.env.OPENCODE_ANALYZE_MODEL = "openai/gpt-5.3-codex";
+    delete process.env.OPENCODE_ANALYZE_VARIANT;
+
+    const resolved = resolveAnalyzeModel({});
+    expect(resolved.model).toBe("openai/gpt-5.3-codex");
     expect(resolved.variant).toBeUndefined();
   });
 
@@ -44,15 +53,15 @@ describe("resolveAnalyzeModel", () => {
   });
 
   test("cli args override env", () => {
-    process.env.OPENCODE_ANALYZE_MODEL = "zai-coding-plan/glm-4.7-flash";
+    process.env.OPENCODE_ANALYZE_MODEL = "openai/gpt-5.3-codex";
     process.env.OPENCODE_ANALYZE_VARIANT = "low";
 
     const resolved = resolveAnalyzeModel({
-      model: "zai-coding-plan/glm-4.6v",
+      model: "anthropic/claude-sonnet-4-6",
       variant: "high",
     });
 
-    expect(resolved.model).toBe("zai-coding-plan/glm-4.6v");
+    expect(resolved.model).toBe("anthropic/claude-sonnet-4-6");
     expect(resolved.variant).toBe("high");
   });
 
