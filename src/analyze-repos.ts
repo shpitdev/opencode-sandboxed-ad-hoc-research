@@ -618,11 +618,16 @@ function buildAnalysisPrompt(params: { inputUrl: string; reportPath: string }): 
     "",
     "Workflow requirements:",
     "1) Read README and infer claimed scope/completeness.",
-    "2) Inspect code paths and architecture.",
-    "3) Run the project where sensible (install deps, tests, build, or smoke run).",
+    "2) Inspect highest-signal code paths and architecture.",
+    "3) Run a small runtime check where sensible (install + one or two commands max).",
     "4) Capture meaningful command evidence and errors; do not fabricate.",
     "5) Evaluate implementation quality honestly.",
     "6) Compare alternatives (products/repos) that do similar things better, with links.",
+    "",
+    "Execution budget:",
+    "- Keep tool usage focused (target <= 8 tool calls total).",
+    "- Prioritize high-signal files first: README, package manifest, main implementation files, and tests.",
+    "- Runtime validation should be concise: 1-2 high-value commands max.",
     "",
     `Write a markdown report to this exact path: ${params.reportPath}`,
     "",
@@ -630,29 +635,31 @@ function buildAnalysisPrompt(params: { inputUrl: string; reportPath: string }): 
     "1. Input URL",
     "2. Claimed Purpose (from README)",
     "3. Reality Check Summary",
-    "   - Keep this very concise and easy to scan (4-7 bullets max).",
+    "   - Keep this concise and easy to scan (4-7 bullets max).",
     "   - Sentence fragments are allowed and encouraged when clearer.",
-    "4. More Accurate Title + Description",
-    "5. How It Works (logic walkthrough)",
+    "4. How It Works (logic walkthrough)",
     "   - Explain the end-to-end flow in plain terms.",
     "   - Include at least one ASCII diagram that maps key components and data flow.",
-    "6. Functionality Breakdown (logically grouped)",
+    "5. Functionality Breakdown (logically grouped)",
     "   - For each group: what exists, what's solid, what's partial/sloppy, with file-path evidence.",
-    "7. Runtime Validation",
+    "6. Runtime Validation",
     "   - Commands run, key logs/output, blockers.",
-    "8. Quality Assessment",
+    "7. Quality Assessment",
     "   - correctness, maintainability, test quality, production-readiness risks.",
-    "9. Usefulness & Value Judgment",
-    "   - who should use it, who should not, where it is valuable.",
-    "10. Better Alternatives",
+    "8. Better Alternatives",
     "   - at least 3 alternatives with links and why they are better for specific scenarios.",
-    "11. Final Verdict",
-    "   - completeness score (0-10) and practical value score (0-10), with rationale.",
+    "9. Final Verdict",
+    "   - include completeness score (0-10) and practical value score (0-10), with rationale.",
+    "10. Usefulness & Value Judgment",
+    "   - who should use it, who should not, where it is valuable.",
     "",
     "Constraints:",
     "- Be direct and specific.",
     "- Prefer concise bullets over long prose paragraphs.",
     "- Sentence fragments are acceptable.",
+    "- Do not output planning notes, handoff notes, or 'continue' prompts.",
+    "- Final step must write the complete report to the exact target path before exiting.",
+    "- Stop immediately after writing the report file.",
     "- If something cannot be validated, state it explicitly.",
     "- Save only the final report file.",
   ].join("\n");
@@ -773,9 +780,9 @@ async function analyzeOneRepo(params: {
     );
 
     const resolveOpencodeBin =
-      "if command -v opencode >/dev/null 2>&1; then command -v opencode; " +
-      'elif [ -x "$HOME/.bun/bin/opencode" ]; then echo "$HOME/.bun/bin/opencode"; ' +
+      'if [ -x "$HOME/.bun/bin/opencode" ]; then echo "$HOME/.bun/bin/opencode"; ' +
       'elif [ -x "$HOME/.local/bin/opencode" ]; then echo "$HOME/.local/bin/opencode"; ' +
+      "elif command -v opencode >/dev/null 2>&1; then command -v opencode; " +
       'else echo "opencode binary not found in PATH, ~/.bun/bin, or ~/.local/bin" >&2; exit 127; fi';
 
     const prompt = buildAnalysisPrompt({
