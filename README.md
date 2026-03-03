@@ -179,9 +179,11 @@ bun run start -- --no-open
 ### Defaults and behavior
 
 - Default model selection:
-  - Standard: `zai-coding-plan/glm-4.7-flash`
+  - Standard: `openai/gpt-5.3-codex`
+  - Standard variant: `high`
   - Vision mode (`--vision`): `zai-coding-plan/glm-4.6v`
 - Override with `--model`, `--variant`, `OPENCODE_ANALYZE_MODEL`, or `OPENCODE_ANALYZE_VARIANT`
+- If you override the model, variant is opt-in (no forced default variant for custom/env model overrides)
 - Auto-installs missing `git` and `node/npm` inside sandbox
 - Forwards provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `OPENROUTER_*`, `ZHIPU_*`, `MINIMAX_*`, etc.)
 - Syncs local OpenCode config files from `~/.config/opencode` when present
@@ -196,7 +198,7 @@ bun run start -- --no-open
 ```bash
 bun run analyze -- --input example.md
 bun run analyze -- https://github.com/owner/repo-one https://github.com/owner/repo-two
-bun run analyze -- --out-dir findings --model zai-coding-plan/glm-4.7-flash --target us
+bun run analyze -- --out-dir findings --model openai/gpt-5.3-codex --variant high --target us
 bun run analyze -- --vision
 bun run analyze -- --analyze-timeout-sec 3600 --keep-sandbox
 ```
@@ -208,15 +210,15 @@ If no URLs and no `--input` are provided, the script uses `example.md` when it e
 ## Output Layout
 
 - `<out-dir>/index.md` - summary across all URLs
-- `<out-dir>/<NN-slug>/findings.md` - final report for each repository
-- `<out-dir>/<NN-slug>/README.*` - copied repository README (if found)
-- `<out-dir>/<NN-slug>/opencode-run.log` - raw OpenCode run output
-- `<out-dir>/<NN-slug>/opencode-models-anthropic.log` - Anthropic model-list preflight output (only when `anthropic/*` model is requested)
+- `<out-dir>/<YYYY-MM-DD-NN-slug>/findings.md` - final report for each repository
+- `<out-dir>/<YYYY-MM-DD-NN-slug>/README.*` - copied repository README (if found)
+- `<out-dir>/<YYYY-MM-DD-NN-slug>/opencode-run.log` - raw OpenCode run output
+- `<out-dir>/<YYYY-MM-DD-NN-slug>/opencode-models-anthropic.log` - Anthropic model-list preflight output (only when `anthropic/*` model is requested)
 
-Example retained in this repo:
+Recommended naming convention for manual runs:
 
 ```bash
-bun run analyze -- --input example.md --out-dir findings-confidence-3 --analyze-timeout-sec 3600 --keep-sandbox
+bun run analyze -- --input example.md --out-dir findings-2026-03-03 --analyze-timeout-sec 3600 --keep-sandbox
 ```
 
 ---
