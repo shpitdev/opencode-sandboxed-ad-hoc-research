@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { __testables } from "./shpit-config.js";
+import { __testables } from "./sandcode-config.js";
 
-describe("shpit config parsing", () => {
+describe("sandcode config parsing", () => {
   test("parses obsidian table values", () => {
     const parsed = __testables.parseToml(
       [
@@ -9,7 +9,7 @@ describe("shpit config parsing", () => {
         "enabled = true",
         'command = "obsidian"',
         'vault_path = "/vault"',
-        'notes_root = "Research/OpenCode"',
+        'notes_root = "Research/Sandcode"',
         'catalog_mode = "repo"',
         "open_after_catalog = false",
         'integration_mode = "headless"',
@@ -17,7 +17,7 @@ describe("shpit config parsing", () => {
         "sync_after_catalog = true",
         "sync_timeout_sec = 180",
       ].join("\n"),
-      "shpit.toml",
+      "sandcode.toml",
     );
 
     expect(parsed).toBeObject();
@@ -25,7 +25,7 @@ describe("shpit config parsing", () => {
     expect(obsidian.enabled).toBe(true);
     expect(obsidian.command).toBe("obsidian");
     expect(obsidian.vault_path).toBe("/vault");
-    expect(obsidian.notes_root).toBe("Research/OpenCode");
+    expect(obsidian.notes_root).toBe("Research/Sandcode");
     expect(obsidian.catalog_mode).toBe("repo");
     expect(obsidian.open_after_catalog).toBe(false);
     expect(obsidian.integration_mode).toBe("headless");
@@ -49,7 +49,7 @@ describe("shpit config parsing", () => {
     expect(config.enabled).toBe(false);
     expect(config.command).toBe("obsidian");
     expect(config.catalogMode).toBe("date");
-    expect(config.notesRoot).toBe("Research/OpenCode");
+    expect(config.notesRoot).toBe("Research/Sandcode");
     expect(config.openAfterCatalog).toBe(false);
     expect(config.integrationMode).toBe("desktop");
     expect(config.headlessCommand).toBe("ob");

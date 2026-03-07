@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import { Daytona, type Sandbox } from "@daytonaio/sdk";
 import { buildInstallOpencodeCommand } from "./opencode-cli.js";
-import { loadConfiguredEnv } from "./shpit-config.js";
+import { loadConfiguredEnv } from "./sandcode-config.js";
 
 type CliOptions = {
   port: number;
@@ -51,8 +51,24 @@ function parsePort(value: string): number {
   return parsed;
 }
 
-function parseCliOptions(): CliOptions {
+export function formatStartHelp(invocation = "sandcode start"): string {
+  return `Usage: ${invocation} [options]
+
+Options:
+  -p, --port <n>                 Port to expose OpenCode web server (default: 3000)
+      --target <name>            Daytona target override
+      --sandbox-name <name>      Custom sandbox name
+      --create-timeout-sec <n>   Sandbox creation timeout seconds (default: 180)
+      --install-timeout-sec <n>  OpenCode install timeout seconds (default: 900)
+      --keep-sandbox             Keep sandbox after stopping (default: false)
+      --no-open                  Do not auto-open OpenCode URL
+  -h, --help                     Show this help
+`;
+}
+
+function parseCliOptions(args: string[]): CliOptions | undefined {
   const { values } = parseArgs({
+    args,
     options: {
       help: { type: "boolean", short: "h", default: false },
       port: { type: "string", short: "p", default: "3000" },
@@ -68,19 +84,7 @@ function parseCliOptions(): CliOptions {
   });
 
   if (values.help) {
-    console.log(`Usage: bun run start -- [options]
-
-Options:
-  -p, --port <n>                 Port to expose OpenCode web server (default: 3000)
-      --target <name>            Daytona target override
-      --sandbox-name <name>      Custom sandbox name
-      --create-timeout-sec <n>   Sandbox creation timeout seconds (default: 180)
-      --install-timeout-sec <n>  OpenCode install timeout seconds (default: 900)
-      --keep-sandbox             Keep sandbox after stopping (default: false)
-      --no-open                  Do not auto-open OpenCode URL
-  -h, --help                     Show this help
-`);
-    process.exit(0);
+    return undefined;
   }
 
   return {
@@ -326,7 +330,7 @@ async function streamCommandLogsUntilExit(params: {
   }
 }
 
-async function main(): Promise<void> {
+export async function runStartCli(args = process.argv.slice(2)): Promise<number> {
   const loadedEnv = await loadConfiguredEnv();
   if (loadedEnv.keysLoaded.length > 0) {
     console.log(
@@ -334,7 +338,11 @@ async function main(): Promise<void> {
     );
   }
 
-  const options = parseCliOptions();
+  const options = parseCliOptions(args);
+  if (!options) {
+    console.log(formatStartHelp());
+    return 0;
+  }
   const apiKey = requireEnv("DAYTONA_API_KEY");
   const apiUrl = process.env.DAYTONA_API_URL;
   const effectiveTarget = options.target ?? process.env.DAYTONA_TARGET;
@@ -505,10 +513,15 @@ async function main(): Promise<void> {
   } finally {
     await cleanup();
   }
+
+  return 0;
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-  console.error(`[local] Failed: ${message}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  const exitCode = await runStartCli().catch((error: unknown) => {
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    console.error(`[local] Failed: ${message}`);
+    return 1;
+  });
+  process.exit(exitCode);
+}

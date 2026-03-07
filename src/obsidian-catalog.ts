@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ResolvedShpitConfig } from "./shpit-config.js";
+import type { ResolvedSandcodeConfig } from "./sandcode-config.js";
 
 type CommandResult = {
   exitCode: number | null;
@@ -11,7 +11,7 @@ type CommandResult = {
 };
 
 type CatalogInput = {
-  config: ResolvedShpitConfig;
+  config: ResolvedSandcodeConfig;
   slug: string;
   runLabel: string;
   sourceUrl: string;
@@ -245,7 +245,7 @@ export async function catalogAnalysisResult(input: CatalogInput): Promise<Catalo
     return {
       attempted: false,
       written: false,
-      skippedReason: "Obsidian cataloging is disabled in shpit.toml.",
+      skippedReason: "Obsidian cataloging is disabled in sandcode.toml.",
     };
   }
 

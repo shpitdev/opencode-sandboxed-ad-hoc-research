@@ -12,7 +12,7 @@ permissions:
 env:
   DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
   DAYTONA_API_URL: ${{ vars.DAYTONA_API_URL }}
-  ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+  OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
 
 jobs:
   Check:
@@ -25,7 +25,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.8
+          bun-version: 1.3.10
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -41,9 +41,10 @@ jobs:
 
       - name: CLI smoke checks
         run: |
-          bun run analyze -- --help
-          bun run start -- --help
-          bun run setup -- --help
+          bun src/sandcode.ts --help
+          bun src/sandcode.ts analyze --help
+          bun src/sandcode.ts start --help
+          bun src/sandcode.ts setup --help
 
   BuildPackage:
     name: Build Package Artifact
@@ -61,7 +62,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.8
+          bun-version: 1.3.10
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -87,6 +88,11 @@ jobs:
     runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: BuildPackage
     steps:
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -105,9 +111,25 @@ jobs:
           npm init -y
           npm install ../artifacts/*.tgz
 
-      - name: Run installed CLI binaries
+      - name: Run installed CLI binary
         run: |
           cd e2e-install
-          ./node_modules/.bin/opencode-sandboxed-research-analyze --help
-          ./node_modules/.bin/opencode-sandboxed-research-start --help
-          ./node_modules/.bin/opencode-sandboxed-research-setup --help
+          ./node_modules/.bin/sandcode --help
+          ./node_modules/.bin/sandcode analyze --help
+          ./node_modules/.bin/sandcode start --help
+          ./node_modules/.bin/sandcode setup --help
+
+      - name: Run installed setup smoke
+        run: |
+          cd e2e-install
+          mkdir -p home-smoke/vaults/test
+          HOME="$PWD/home-smoke" ./node_modules/.bin/sandcode setup --yes \
+            --vault-path ~/vaults/test \
+            --obsidian-integration desktop \
+            --notes-root Research/Sandcode \
+            --catalog-mode repo \
+            --daytona-api-key daytona-test \
+            --opencode-api-key opencode-test
+
+          test -f home-smoke/.config/sandcode/sandcode.toml
+          test -f home-smoke/.config/sandcode/.env
