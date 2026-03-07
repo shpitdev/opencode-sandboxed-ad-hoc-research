@@ -22,19 +22,17 @@ describe("buildOpencodeRunCommand", () => {
       resolveOpencodeBinCommand: "command -v opencode",
       workingDir: "/home/daytona/audit/repo",
       prompt: "Reply with exactly one word: ready",
-      model: "zai-coding-plan/glm-4.7-flash",
-      variant: "high",
+      model: "opencode-go/glm-5",
       forwardedEnvEntries: [
-        ["OPENAI_API_KEY", "sk-test"],
-        ["ZHIPU_API_KEY", "z-test"],
+        ["OPENCODE_API_KEY", "oc-test"],
+        ["MINIMAX_API_KEY", "mm-test"],
       ],
     });
 
     expect(command).toContain('OPENCODE_BIN="$(command -v opencode)"');
     expect(command).toContain("cd '/home/daytona/audit/repo'");
-    expect(command).toContain("env OPENAI_API_KEY='sk-test' ZHIPU_API_KEY='z-test'");
-    expect(command).toContain("--model 'zai-coding-plan/glm-4.7-flash'");
-    expect(command).toContain("--variant 'high'");
+    expect(command).toContain("env OPENCODE_API_KEY='oc-test' MINIMAX_API_KEY='mm-test'");
+    expect(command).toContain("--model 'opencode-go/glm-5'");
     expect(command).not.toContain("--dir");
   });
 });

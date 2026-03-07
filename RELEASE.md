@@ -1,79 +1,103 @@
 # Release Process
 
-This project publishes to GitHub Packages, not npmjs.org.
+This project publishes `sandcode` to npm.
 
-- Registry: `https://npm.pkg.github.com`
-- Package: `@shpitdev/opencode-sandboxed-ad-hoc-research`
+- Registry: `https://registry.npmjs.org`
+- Package: `sandcode`
 - Tags:
   - `next` for prerelease validation builds
-  - `latest` for stable public installs
+  - `latest` for stable releases
 
 ## Automated Flow
 
-Workflow: `.github/workflows/publish-package.yml`
+Workflow: `.github/workflows/publish.yml`
 
 1. Any merge to `main` triggers publish automation.
-2. The workflow resolves the merged PR context:
-   - Normal PR merge:
-     - publishes `0.0.(x+1)-next.<run>.<attempt>.<sha>` with npm tag `next`
-     - opens or updates draft bump PR `ci/version-bump-0.0.(x+1)`
-   - Bump PR merge (`ci/version-bump-0.0.x`):
-     - publishes `0.0.x` with npm tag `latest`
-     - does not create another bump PR
-3. The workflow verifies:
-   - dist-tag points to the just-published version
-   - clean install from GitHub Packages into a fresh project
-   - installed CLI binaries execute (`--help`)
+2. Normal PR merges publish the next patch as a prerelease tagged `next`.
+3. The automated bump PR publishes the stable patch tagged `latest`.
+4. The workflow verifies:
+   - the expected dist-tag points to the published version
+   - a clean registry install succeeds
+   - `sandcode --help` and subcommand help all execute
 
 ## Required Repository Configuration
 
 - GitHub Actions:
-  - `GITHUB_TOKEN` must keep `contents:write`, `pull-requests:write`, `packages:write` permissions in `publish-package.yml`.
-- Optional token:
-  - `GH_PAT` can be set to let `create-pull-request` use a PAT instead of `GITHUB_TOKEN`.
-- Branch governance:
-  - Keep required checks enforced for PRs into `main`:
-    - `CodeQL`
+  - `contents: write`
+  - `pull-requests: write`
+- npm trusted publishing:
+  - configure `sandcode` on npm to trust this GitHub repository
+  - keep the publish job on a GitHub-hosted runner so npm can verify OIDC identity
+- Optional:
+  - `GH_PAT` if bump PR creation should use a PAT instead of `GITHUB_TOKEN`
 
 ## Verify Current Published State
 
 ```bash
-# requires a token with read:packages
-export NODE_AUTH_TOKEN="<token>"
-
-npm view @shpitdev/opencode-sandboxed-ad-hoc-research dist-tags --registry https://npm.pkg.github.com
-npm view @shpitdev/opencode-sandboxed-ad-hoc-research versions --json --registry https://npm.pkg.github.com
+npm view sandcode dist-tags
+npm view sandcode versions --json
 ```
 
-## Rollback Playbook
+## First Publish From Local
 
-### Wrong `latest` version
-
-Point `latest` back to a known-good version:
+The first `sandcode` publish should be done locally to create the package on npm. After that, enable npm trusted publishing for the GitHub repo and point it at `.github/workflows/publish.yml`.
 
 ```bash
-export NODE_AUTH_TOKEN="<token with packages:write>"
-npm dist-tag add @shpitdev/opencode-sandboxed-ad-hoc-research@0.0.<good> latest --registry https://npm.pkg.github.com
+bun install
+bun run check
+bun run typecheck
+bun test
+bun run build
+npm pack
 ```
 
-### Wrong `next` version
-
-Point `next` to a known-good prerelease or stable version:
+Then install the tarball into a clean local test project and smoke it before publishing:
 
 ```bash
-export NODE_AUTH_TOKEN="<token with packages:write>"
-npm dist-tag add @shpitdev/opencode-sandboxed-ad-hoc-research@0.0.<good>-next.<build> next --registry https://npm.pkg.github.com
+cd /path/to/sandcode-testing
+mkdir -p local-publish-check
+cd local-publish-check
+npm init -y
+npm install /absolute/path/to/sandcode-<version>.tgz
+./node_modules/.bin/sandcode --help
+./node_modules/.bin/sandcode analyze --help
+./node_modules/.bin/sandcode start --help
+./node_modules/.bin/sandcode setup --help
 ```
 
-### Bad version must be removed
+When that passes, publish from the repo root:
 
-Delete the package version from GitHub Packages (org package settings or API) using a token with package delete privileges.
+```bash
+npm login
+npm publish
+```
 
-## Manual Recovery Steps
+If your npm account requires publish-time 2FA, the npm CLI will prompt for the verification step. With a YubiKey/WebAuthn setup, that flow is handled interactively rather than by a static `--otp` value.
 
-1. Revert incorrect code on a PR and merge to `main`.
-2. If needed, retag `next`/`latest` first to stop new installs from pulling bad builds.
-3. Confirm dist-tags and install:
-   - `npm view ... dist-tags`
-   - install into clean temp project
-4. Keep bump PR (`ci/version-bump-*`) aligned with intended next stable patch.
+## Rollback
+
+Reset `latest`:
+
+```bash
+npm dist-tag add sandcode@0.0.<good> latest
+```
+
+Reset `next`:
+
+```bash
+npm dist-tag add sandcode@0.0.<good>-next.<build> next
+```
+
+Delete a bad version:
+
+- remove it from npm with an account allowed to manage package versions
+
+## Manual Recovery
+
+1. Revert bad code on a PR and merge it.
+2. Retag `next` or `latest` if installs need to be corrected immediately.
+3. Verify:
+   - `npm view sandcode dist-tags`
+   - clean install into a temp project
+   - `sandcode --help`
+4. Keep the automated version-bump PR aligned with the next intended stable patch.

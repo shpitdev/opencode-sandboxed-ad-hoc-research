@@ -10,7 +10,11 @@ import {
   buildOpencodeModelsCommand,
   buildOpencodeRunCommand,
 } from "./opencode-cli.js";
-import { loadConfiguredEnv, type ResolvedShpitConfig, resolveShpitConfig } from "./shpit-config.js";
+import {
+  loadConfiguredEnv,
+  type ResolvedSandcodeConfig,
+  resolveSandcodeConfig,
+} from "./sandcode-config.js";
 
 type CliOptions = {
   inputFile?: string;
@@ -232,8 +236,33 @@ function findNormalizedModelMatch(
   return availableModels.find((model) => normalizeModelId(model) === normalizedRequested);
 }
 
-function parseCliOptions(): CliOptions {
+export function formatAnalyzeHelp(invocation = "sandcode analyze"): string {
+  return `Usage: ${invocation} [repo-url ...] [options]
+
+Examples:
+  sandcode analyze --input example.md
+  sandcode analyze https://github.com/agenticnotetaking/arscontexta
+  sandcode analyze links.md
+  sandcode analyze --vision
+
+Options:
+  -i, --input <path>             Markdown/text file containing links
+      --out-dir <dir>            Output directory for findings (default: findings)
+      --create-timeout-sec <n>   Sandbox creation timeout (default: 180)
+      --install-timeout-sec <n>  OpenCode install timeout (default: 900)
+      --analyze-timeout-sec <n>  Per-repo analysis timeout (default: 2400)
+      --target <name>            Daytona target override
+      --model <provider/model>   OpenCode model (default: opencode-go/glm-5)
+      --variant <name>           Model variant override
+      --vision                   Prefer vision-capable default model (zai-coding-plan/glm-4.6v)
+      --keep-sandbox             Keep each sandbox instead of deleting it
+  -h, --help                     Show this help
+`;
+}
+
+function parseCliOptions(args: string[]): CliOptions | undefined {
   const { values, positionals } = parseArgs({
+    args,
     options: {
       help: { type: "boolean", short: "h", default: false },
       input: { type: "string", short: "i" },
@@ -252,32 +281,19 @@ function parseCliOptions(): CliOptions {
   });
 
   if (values.help) {
-    console.log(`Usage: bun run analyze -- [repo-url ...] [options]
-
-Examples:
-  bun run analyze -- --input example.md
-  bun run analyze -- https://github.com/agenticnotetaking/arscontexta
-  bun run analyze -- --input links.md --out-dir findings --model openai/gpt-5.3-codex --variant high
-  bun run analyze -- --vision
-
-Options:
-  -i, --input <path>             Markdown/text file containing links
-      --out-dir <dir>            Output directory for findings (default: findings)
-      --create-timeout-sec <n>   Sandbox creation timeout (default: 180)
-      --install-timeout-sec <n>  OpenCode install timeout (default: 900)
-      --analyze-timeout-sec <n>  Per-repo analysis timeout (default: 2400)
-      --target <name>            Daytona target override
-      --model <provider/model>   OpenCode model (default: openai/gpt-5.3-codex)
-      --variant <name>           Model variant (default: high, when using built-in default model)
-      --vision                   Prefer vision-capable default model (zai-coding-plan/glm-4.6v)
-      --keep-sandbox             Keep each sandbox instead of deleting it
-  -h, --help                     Show this help
-`);
-    process.exit(0);
+    return undefined;
   }
 
+  const directInputFile =
+    values.input === undefined &&
+    positionals.length === 1 &&
+    !normalizeUrlCandidate(positionals[0]) &&
+    positionals[0].trim().length > 0
+      ? positionals[0]
+      : undefined;
+
   return {
-    inputFile: values.input,
+    inputFile: values.input ?? directInputFile,
     outDir: values["out-dir"],
     createTimeoutSec: parsePositiveInt(values["create-timeout-sec"], "--create-timeout-sec"),
     installTimeoutSec: parsePositiveInt(values["install-timeout-sec"], "--install-timeout-sec"),
@@ -287,7 +303,7 @@ Options:
     model: values.model,
     variant: values.variant,
     vision: values.vision,
-    urls: positionals,
+    urls: directInputFile ? [] : positionals,
   };
 }
 
@@ -675,7 +691,7 @@ function buildAnalysisPrompt(params: { inputUrl: string; reportPath: string }): 
 async function analyzeOneRepo(params: {
   daytona: Daytona;
   options: CliOptions;
-  config: ResolvedShpitConfig;
+  config: ResolvedSandcodeConfig;
   url: string;
   index: number;
   total: number;
@@ -1024,7 +1040,7 @@ async function analyzeOneRepo(params: {
 }
 
 async function maybeCatalogResult(params: {
-  config: ResolvedShpitConfig;
+  config: ResolvedSandcodeConfig;
   result: AnalyzeResult;
   runPrefix: string;
 }): Promise<void> {
@@ -1092,16 +1108,20 @@ async function writeIndex(results: AnalyzeResult[], outDir: string): Promise<voi
   await writeFile(path.join(outDir, "index.md"), lines.join("\n"), "utf8");
 }
 
-async function main(): Promise<void> {
+export async function runAnalyzeCli(args = process.argv.slice(2)): Promise<number> {
   const loadedEnv = await loadConfiguredEnv();
   if (loadedEnv.keysLoaded.length > 0) {
     console.log(
       `[analyze] Loaded ${loadedEnv.keysLoaded.length} env var(s) from config (.env) files.`,
     );
   }
-  const config = await resolveShpitConfig();
+  const config = await resolveSandcodeConfig();
 
-  const options = parseCliOptions();
+  const options = parseCliOptions(args);
+  if (!options) {
+    console.log(formatAnalyzeHelp());
+    return 0;
+  }
   const urls = await resolveInputUrls(options);
   const apiKey = requireEnv("DAYTONA_API_KEY");
   const apiUrl = process.env.DAYTONA_API_URL;
@@ -1134,13 +1154,14 @@ async function main(): Promise<void> {
   await writeIndex(results, options.outDir);
   const failures = results.filter((result) => !result.success).length;
   console.log(`[analyze] Completed. Success: ${results.length - failures}, Failed: ${failures}`);
-  if (failures > 0) {
-    process.exitCode = 1;
-  }
+  return failures > 0 ? 1 : 0;
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-  console.error(`[analyze] Fatal error: ${message}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  const exitCode = await runAnalyzeCli().catch((error: unknown) => {
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    console.error(`[analyze] Fatal error: ${message}`);
+    return 1;
+  });
+  process.exit(exitCode);
+}

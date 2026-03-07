@@ -1,261 +1,142 @@
-# OpenCode Sandboxed Ad Hoc Research
+# Sandcode
 
-Run OpenCode inside Daytona sandboxes for two workflows: remote OpenCode web sessions and URL-driven repository audits.
+Sandcode is a Bun CLI for ad hoc software research with OpenCode running inside Daytona sandboxes.
 
-<!-- Core Stack -->
-[![Daytona SDK](https://img.shields.io/badge/Daytona_SDK-0.143.0-0891B2?logo=databricks&logoColor=white)](https://www.daytona.io/docs)
-[![OpenCode](https://img.shields.io/badge/OpenCode-CLI-10B981?logo=terminal&logoColor=white)](https://github.com/opencode-ai/opencode)
-[![Bun](https://img.shields.io/badge/Bun-1.3.8-FBF0DF?logo=bun&logoColor=black)](https://bun.sh/docs)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/docs/)
+It does three things well:
 
-<!-- Tooling -->
-[![Biome](https://img.shields.io/badge/Biome-2.4.3-60A5FA?logo=biome&logoColor=white)](https://biomejs.dev/guides/getting-started/)
+- `sandcode analyze` runs evidence-based repository audits from URLs or link files.
+- `sandcode start` boots an OpenCode web session in a fresh Daytona sandbox.
+- `sandcode setup` launches an OpenTUI wizard for Obsidian integration and local credentials.
 
----
+## Install
 
-## What is this?
-
-This project automates Daytona sandbox setup and OpenCode execution.
-
-**It ships two entrypoints:**
-- `bun run start` - boots OpenCode web in a fresh Daytona sandbox and prints an externally reachable preview URL.
-- `bun run analyze` - runs headless OpenCode audits against one or more repository URLs and collects findings locally.
-
----
-
-## Table of Contents
-
-- [What is this?](#what-is-this)
-- [Prerequisites](#prerequisites)
-- [Install On New Machine](#install-on-new-machine)
-- [Quick Start](#quick-start)
-- [Installer & Obsidian Cataloging](#installer--obsidian-cataloging)
-- [Commands](#commands)
-- [Repository Audit Workflow](#repository-audit-workflow)
-- [Output Layout](#output-layout)
-- [Release Automation](#release-automation)
-- [Release Process](#release-process)
-- [Development](#development)
-- [Compatibility Notes](#compatibility-notes)
-
----
-
-## Prerequisites
-
-- [Bun](https://bun.sh/) 1.3+
-- `DAYTONA_API_KEY`
-- `DAYTONA_API_URL` for self-hosted Daytona (example: `https://daytona.example.com/api`)
-- Optional but recommended: `OPENCODE_SERVER_PASSWORD`
-- Obsidian Headless CLI in `PATH` (`ob`, installed via `npm install -g obsidian-headless`) for non-disruptive sync
-- Obsidian Catalyst access (Headless Sync is currently open beta)
-- Active Obsidian Sync subscription (required for `ob sync-*`)
-- Optional: `obsidian` desktop CLI in `PATH` if you explicitly use desktop integration/open-after-catalog
-
----
-
-## Install On New Machine
-
-Use the bootstrap installer:
+One-off use:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shpitdev/opencode-sandboxed-ad-hoc-research/main/scripts/install-gh-package.sh | bash
+bunx sandcode --help
 ```
 
-It will:
+Global install:
 
-- reuse `gh auth` token when available and auto-attempt `read:packages` scope refresh
-- otherwise prompt for a GitHub token with `read:packages`
-- configure `~/.npmrc` for GitHub Packages
-- skip registry auth setup automatically when installing from a local tarball path
-- install `@shpitdev/opencode-sandboxed-ad-hoc-research` globally
-- launch the guided setup flow for Daytona/model credentials
+```bash
+bun add -g sandcode
+```
 
----
+Bootstrap script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/shpitdev/sandcode/main/scripts/install.sh | bash
+```
 
 ## Quick Start
 
-```bash
-bun install
-bun run start
-```
-
-OpenCode will be available on the printed Daytona preview URL.
-
-Stop with `Ctrl+C`.
-
----
-
-## Installer & Obsidian Cataloging
-
-Run the guided installer:
+First-run setup:
 
 ```bash
-bun run setup
+bunx sandcode setup
 ```
 
-It sets up:
-
-- `~/.config/opencode/shpit.toml` for shared preferences
-- `~/.config/opencode/.env` for optional credential storage
-- headless preflight checks when `obsidian.integration_mode = "headless"`:
-  - verifies `ob` command is installed
-  - runs `ob sync-list-remote` to validate account/login/sync access
-
-No provider API key is required if you only use free `opencode/*` models (for example `opencode/minimax-m2.5-free`).
-
-`analyze` automatically catalogs findings to Obsidian when enabled in `shpit.toml`.
-
-Example config:
-
-```toml
-[obsidian]
-enabled = true
-command = "obsidian"
-integration_mode = "headless" # headless | desktop
-headless_command = "ob"
-vault_path = "/absolute/path/to/vault"
-notes_root = "Research/OpenCode"
-catalog_mode = "date" # date | repo
-sync_after_catalog = true
-sync_timeout_sec = 120
-open_after_catalog = false # desktop mode only
-```
-
-Project-level `shpit.toml` or `.shpit.toml` overrides global config.
-The configured desktop command must be `obsidian` (not `obs`).
-
-Headless setup is one-time per local vault path:
+Analyze a repository:
 
 ```bash
-npm install -g obsidian-headless
-ob login
-ob sync-list-remote
-mkdir -p ~/vaults/my-headless-vault
-ob sync-setup --vault "My Vault" --path ~/vaults/my-headless-vault
-ob sync --path ~/vaults/my-headless-vault
+bunx sandcode https://github.com/octocat/Hello-World
 ```
 
-Do not run desktop Sync and Headless Sync on the same device for the same vault path; use a dedicated local path for headless workflows.
+Analyze repositories from a link file:
 
----
+```bash
+bunx sandcode links.md
+```
+
+Launch a remote OpenCode web session:
+
+```bash
+bunx sandcode start
+```
+
+## Requirements
+
+- Bun 1.3+
+- `DAYTONA_API_KEY`
+- `OPENCODE_API_KEY` for the built-in `opencode-go/*` model defaults
+- Optional `DAYTONA_API_URL` for self-hosted Daytona
+- Optional `OPENCODE_SERVER_PASSWORD` for `sandcode start`
+- Optional `obsidian` CLI for desktop note opening
+- Optional `ob` CLI for headless Obsidian Sync workflows
 
 ## Commands
 
-| Command | Purpose |
-|---|---|
-| `scripts/install-gh-package.sh` | Bootstrap install from GitHub Packages on a new machine |
-| `bun run setup` | Guided setup for shared config/env, Obsidian mode selection, and headless preflight checks |
-| `bun run start` | Launch OpenCode web in a Daytona sandbox |
-| `bun run analyze -- --input example.md` | Analyze repos listed in a file |
-| `bun run analyze -- <url1> <url2>` | Analyze direct repo URLs |
-| `bun run build` | Compile distributable CLI files into `dist/` |
-| `bun run lint` | Lint with Biome |
-| `bun run format` | Format with Biome |
-| `bun run check` | Run Biome checks |
-| `bun run typecheck` | Run TypeScript checks |
-
-Useful `start` flags:
-
 ```bash
-bun run start -- --port 3000 --target us --sandbox-name opencode-dev
-bun run start -- --keep-sandbox
-bun run start -- --no-open
+sandcode --help
+sandcode analyze --help
+sandcode start --help
+sandcode setup --help
 ```
 
----
+Examples:
+
+```bash
+sandcode analyze --input example.md
+sandcode analyze --out-dir findings --model opencode-go/kimi-k2.5 https://github.com/owner/repo
+sandcode start --port 3000 --target us --keep-sandbox
+sandcode setup --yes --vault-path ~/vaults/research --obsidian-integration headless
+```
+
+## Setup UX
+
+`sandcode setup` uses an OpenTUI wizard by default when a TTY is available.
+
+It writes:
+
+- `~/.config/sandcode/sandcode.toml`
+- `~/.config/sandcode/.env`
+
+Project-level overrides are supported with:
+
+- `sandcode.toml`
+- `.sandcode.toml`
+
+Default Obsidian notes root:
+
+```toml
+[obsidian]
+notes_root = "Research/Sandcode"
+```
+
+Headless mode runs a real `ob sync-list-remote` preflight before it saves.
 
 ## Repository Audit Workflow
 
-`src/analyze-repos.ts` supports evidence-based audits at scale.
+`sandcode analyze`:
 
-### What it does
+- creates one Daytona sandbox per target
+- clones the repo inside the sandbox
+- installs OpenCode inside the sandbox
+- runs a headless audit prompt
+- writes findings locally
+- optionally catalogs findings into Obsidian
 
-- Creates one Daytona sandbox per URL
-- Clones each repo in its sandbox
-- Runs OpenCode headlessly to generate findings
-- Copies findings plus repo README back to local output
-- Deletes sandboxes automatically unless `--keep-sandbox`
+Default output layout:
 
-### Defaults and behavior
+- `<out-dir>/index.md`
+- `<out-dir>/<YYYY-MM-DD-NN-slug>/findings.md`
+- `<out-dir>/<YYYY-MM-DD-NN-slug>/README.*`
+- `<out-dir>/<YYYY-MM-DD-NN-slug>/opencode-run.log`
 
-- Default model selection:
-  - Standard: `openai/gpt-5.3-codex`
-  - Standard variant: `high`
-  - Vision mode (`--vision`): `zai-coding-plan/glm-4.6v`
-- Override with `--model`, `--variant`, `OPENCODE_ANALYZE_MODEL`, or `OPENCODE_ANALYZE_VARIANT`
-- If you override the model, variant is opt-in (no forced default variant for custom/env model overrides)
-- Auto-installs missing `git` and `node/npm` inside sandbox
-- Forwards provider env vars (`OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `OPENROUTER_*`, `ZHIPU_*`, `MINIMAX_*`, etc.)
-- Syncs local OpenCode config files from `~/.config/opencode` when present
-- Syncs local OpenCode OAuth auth file (`~/.local/share/opencode/auth.json`) into sandbox with `chmod 600` when present
-- When using `anthropic/*` models, runs `opencode models anthropic` preflight inside sandbox and fails early if the requested model is unavailable
-- Produces more skimmable reports with concise summary bullets, sentence-fragment-friendly style, and an ASCII logic/data-flow diagram section
-- Uses a fixed Daytona lifecycle policy: auto-stop after 15 minutes, auto-archive after 30 minutes, auto-delete disabled
-- Auto-catalogs findings into Obsidian when enabled via `shpit.toml`, with optional automatic `ob sync` in headless mode
+If no URLs and no `--input` are provided, `example.md` is used when it exists.
 
-### Examples
+## Publishing
 
-```bash
-bun run analyze -- --input example.md
-bun run analyze -- https://github.com/owner/repo-one https://github.com/owner/repo-two
-bun run analyze -- --out-dir findings --model openai/gpt-5.3-codex --variant high --target us
-bun run analyze -- --vision
-bun run analyze -- --analyze-timeout-sec 3600 --keep-sandbox
-```
+The package is intended for npm distribution as `sandcode`.
 
-If no URLs and no `--input` are provided, the script uses `example.md` when it exists.
-
----
-
-## Output Layout
-
-- `<out-dir>/index.md` - summary across all URLs
-- `<out-dir>/<YYYY-MM-DD-NN-slug>/findings.md` - final report for each repository
-- `<out-dir>/<YYYY-MM-DD-NN-slug>/README.*` - copied repository README (if found)
-- `<out-dir>/<YYYY-MM-DD-NN-slug>/opencode-run.log` - raw OpenCode run output
-- `<out-dir>/<YYYY-MM-DD-NN-slug>/opencode-models-anthropic.log` - Anthropic model-list preflight output (only when `anthropic/*` model is requested)
-
-Recommended naming convention for manual runs:
-
-```bash
-bun run analyze -- --input example.md --out-dir findings-2026-03-03 --analyze-timeout-sec 3600 --keep-sandbox
-```
-
----
-
-## Release Automation
-
-- `main` merges trigger `.github/workflows/publish-package.yml` automatically (no manual dispatch).
-- Versioning is enforced as patch-only `0.0.x` and starts at `0.0.1`.
-- Normal PR merges publish a prerelease for the next patch with npm tag `next` (for example `0.0.2-next.<run>.<attempt>.<sha>`), then keep/create a draft bump PR (for example `0.0.1 -> 0.0.2`).
-- Merging the automated bump PR publishes that bumped version as the public release (`latest`) and does not create another `.next` publish.
-
-## Release Process
-
-Release operations, required repo settings, verification commands, and rollback steps are documented in [`RELEASE.md`](RELEASE.md).
-
----
+Release automation, dist-tags, verification, and rollback notes live in [RELEASE.md](./RELEASE.md).
 
 ## Development
 
 ```bash
-bun run lint
-bun run format
+bun install
 bun run check
 bun run typecheck
+bun test
+bun run build
 ```
-
-Project config files:
-
-- `biome.json`
-- `.zed/settings.json`
-- `.zed/tasks.json`
-- `tsconfig.build.json`
-
----
-
-## Compatibility Notes
-
-- Works with modern Daytona control planes.
-- Includes fallback support for older/self-hosted Daytona setups that expose `proxyToolboxUrl` in `/config` but not `/sandbox/:id/toolbox-proxy-url`.
-- No Daytona OpenCode plugin is required for this flow.

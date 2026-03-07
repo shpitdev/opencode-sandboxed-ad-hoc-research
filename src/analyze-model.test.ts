@@ -20,8 +20,8 @@ describe("resolveAnalyzeModel", () => {
     delete process.env.OPENCODE_ANALYZE_VISION_MODEL;
 
     const resolved = resolveAnalyzeModel({});
-    expect(resolved.model).toBe("openai/gpt-5.3-codex");
-    expect(resolved.variant).toBe("high");
+    expect(resolved.model).toBe("opencode-go/glm-5");
+    expect(resolved.variant).toBeUndefined();
   });
 
   test("uses vision default when requested", () => {
@@ -35,25 +35,25 @@ describe("resolveAnalyzeModel", () => {
   });
 
   test("does not force default variant when model is overridden by env", () => {
-    process.env.OPENCODE_ANALYZE_MODEL = "openai/gpt-5.3-codex";
+    process.env.OPENCODE_ANALYZE_MODEL = "opencode-go/glm-5";
     delete process.env.OPENCODE_ANALYZE_VARIANT;
 
     const resolved = resolveAnalyzeModel({});
-    expect(resolved.model).toBe("openai/gpt-5.3-codex");
+    expect(resolved.model).toBe("opencode-go/glm-5");
     expect(resolved.variant).toBeUndefined();
   });
 
   test("respects env overrides", () => {
-    process.env.OPENCODE_ANALYZE_MODEL = "zai-coding-plan/glm-5";
-    process.env.OPENCODE_ANALYZE_VARIANT = "high";
+    process.env.OPENCODE_ANALYZE_MODEL = "opencode-go/kimi-k2.5";
+    process.env.OPENCODE_ANALYZE_VARIANT = "fast";
 
     const resolved = resolveAnalyzeModel({});
-    expect(resolved.model).toBe("zai-coding-plan/glm-5");
-    expect(resolved.variant).toBe("high");
+    expect(resolved.model).toBe("opencode-go/kimi-k2.5");
+    expect(resolved.variant).toBe("fast");
   });
 
   test("cli args override env", () => {
-    process.env.OPENCODE_ANALYZE_MODEL = "openai/gpt-5.3-codex";
+    process.env.OPENCODE_ANALYZE_MODEL = "opencode-go/glm-5";
     process.env.OPENCODE_ANALYZE_VARIANT = "low";
 
     const resolved = resolveAnalyzeModel({

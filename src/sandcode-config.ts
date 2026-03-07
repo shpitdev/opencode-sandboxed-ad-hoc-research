@@ -21,11 +21,11 @@ type PartialObsidianConfig = {
   syncTimeoutSec?: number;
 };
 
-type PartialShpitConfig = {
+type PartialSandcodeConfig = {
   obsidian?: PartialObsidianConfig;
 };
 
-export type ResolvedShpitConfig = {
+export type ResolvedSandcodeConfig = {
   paths: {
     globalConfigPath?: string;
     projectConfigPath?: string;
@@ -50,7 +50,7 @@ export type LoadedEnvInfo = {
   keysLoaded: string[];
 };
 
-const DEFAULT_NOTES_ROOT = "Research/OpenCode";
+const DEFAULT_NOTES_ROOT = "Research/Sandcode";
 
 function stripInlineComment(value: string): string {
   let inSingle = false;
@@ -233,7 +233,7 @@ function asInteger(value: ParsedTomlValue | undefined): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
-function toPartialConfig(parsed: ParsedTomlTable): PartialShpitConfig {
+function toPartialConfig(parsed: ParsedTomlTable): PartialSandcodeConfig {
   const obsidian = asTable(parsed.obsidian);
 
   return {
@@ -258,9 +258,9 @@ function toPartialConfig(parsed: ParsedTomlTable): PartialShpitConfig {
 }
 
 function mergePartialConfig(
-  base: PartialShpitConfig,
-  override: PartialShpitConfig,
-): PartialShpitConfig {
+  base: PartialSandcodeConfig,
+  override: PartialSandcodeConfig,
+): PartialSandcodeConfig {
   return {
     obsidian: {
       ...(base.obsidian ?? {}),
@@ -284,7 +284,7 @@ function normalizeObsidianCommand(command: string | undefined): string {
 
 function normalizeIntegrationMode(
   mode: string | undefined,
-): ResolvedShpitConfig["obsidian"]["integrationMode"] {
+): ResolvedSandcodeConfig["obsidian"]["integrationMode"] {
   const normalized = (mode ?? "desktop").trim() || "desktop";
   if (normalized !== "desktop" && normalized !== "headless") {
     throw new Error(
@@ -324,8 +324,8 @@ function candidateProjectConfigPaths(startDir: string): string[] {
   let current = path.resolve(startDir);
 
   while (true) {
-    candidates.push(path.join(current, "shpit.toml"));
-    candidates.push(path.join(current, ".shpit.toml"));
+    candidates.push(path.join(current, "sandcode.toml"));
+    candidates.push(path.join(current, ".sandcode.toml"));
     const parent = path.dirname(current);
     if (parent === current) {
       break;
@@ -350,10 +350,10 @@ function getGlobalConfigPath(): string | undefined {
   if (!home) {
     return undefined;
   }
-  return path.join(home, ".config", "opencode", "shpit.toml");
+  return path.join(home, ".config", "sandcode", "sandcode.toml");
 }
 
-async function loadConfigAtPath(filePath: string | undefined): Promise<PartialShpitConfig> {
+async function loadConfigAtPath(filePath: string | undefined): Promise<PartialSandcodeConfig> {
   if (!filePath || !(await fileExists(filePath))) {
     return {};
   }
@@ -362,7 +362,7 @@ async function loadConfigAtPath(filePath: string | undefined): Promise<PartialSh
   return toPartialConfig(parseToml(content, filePath));
 }
 
-function resolveFinalConfig(partial: PartialShpitConfig): ResolvedShpitConfig["obsidian"] {
+function resolveFinalConfig(partial: PartialSandcodeConfig): ResolvedSandcodeConfig["obsidian"] {
   const obsidian = partial.obsidian ?? {};
   const catalogMode = obsidian.catalogMode ?? "date";
   if (catalogMode !== "date" && catalogMode !== "repo") {
@@ -439,7 +439,7 @@ async function loadEnvFile(filePath: string | undefined): Promise<Map<string, st
   return parseEnvFile(content);
 }
 
-export async function resolveShpitConfig(cwd = process.cwd()): Promise<ResolvedShpitConfig> {
+export async function resolveSandcodeConfig(cwd = process.cwd()): Promise<ResolvedSandcodeConfig> {
   const globalConfigPath = getGlobalConfigPath();
   const projectConfigPath = await findProjectConfigPath(cwd);
 
@@ -462,7 +462,7 @@ export async function resolveShpitConfig(cwd = process.cwd()): Promise<ResolvedS
 
 export async function loadConfiguredEnv(cwd = process.cwd()): Promise<LoadedEnvInfo> {
   const home = process.env.HOME;
-  const globalEnvPath = home ? path.join(home, ".config", "opencode", ".env") : undefined;
+  const globalEnvPath = home ? path.join(home, ".config", "sandcode", ".env") : undefined;
   const projectConfigPath = await findProjectConfigPath(cwd);
   const projectEnvPath = projectConfigPath
     ? path.join(path.dirname(projectConfigPath), ".env")
