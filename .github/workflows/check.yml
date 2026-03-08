@@ -133,3 +133,18 @@ jobs:
 
           test -f home-smoke/.config/sandcode/sandcode.toml
           test -f home-smoke/.config/sandcode/.env
+
+      - name: Run installed setup TUI smoke
+        run: |
+          cd e2e-install
+          mkdir -p logs
+          status=0
+          timeout 5s script -qefc './node_modules/.bin/sandcode setup' logs/setup-tui.log || status=$?
+          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+            cat logs/setup-tui.log
+            exit "$status"
+          fi
+
+          grep -q 'sandcode' logs/setup-tui.log
+          ! grep -q 'Orphan text error' logs/setup-tui.log
+          ! grep -q 'dispose is not a function' logs/setup-tui.log
