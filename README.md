@@ -86,6 +86,11 @@ sandcode setup --yes --vault-path ~/vaults/research --obsidian-integration headl
 
 `sandcode setup` uses an OpenTUI wizard by default when a TTY is available.
 
+Keyboard controls:
+
+- `Esc` goes back one step
+- `Ctrl+C` exits setup immediately
+
 It writes:
 
 - `~/.config/sandcode/sandcode.toml`
