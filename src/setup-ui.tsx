@@ -482,9 +482,8 @@ function SetupWizard(props: {
         backgroundColor="#12202b"
       >
         <text>
-          <strong fg="#f6d365">sandcode</strong>
+          <strong fg="#f6d365">sandcode </strong>
           <span fg="#8aa5b8">
-            {" "}
             Daytona research, OpenCode sandboxes, and a setup flow worth reusing.
           </span>
         </text>
@@ -547,7 +546,7 @@ function SetupWizard(props: {
                 <box flexDirection="column" gap={1}>
                   <Show when={activeChoiceStep()}>
                     {(stepAccessor) => (
-                      <>
+                      <box flexDirection="column" gap={1}>
                         <text fg="#8fbcd4">{stepAccessor().eyebrow}</text>
                         <text>
                           <strong fg="#f6d365">{stepAccessor().title}</strong>
@@ -582,13 +581,13 @@ function SetupWizard(props: {
                             });
                           }}
                         />
-                      </>
+                      </box>
                     )}
                   </Show>
 
                   <Show when={activeInputStep()}>
                     {(stepAccessor) => (
-                      <>
+                      <box flexDirection="column" gap={1}>
                         <text fg="#8fbcd4">{stepAccessor().eyebrow}</text>
                         <text>
                           <strong fg="#f6d365">{stepAccessor().title}</strong>
@@ -630,7 +629,7 @@ function SetupWizard(props: {
                             }
                           }}
                         />
-                      </>
+                      </box>
                     )}
                   </Show>
                 </box>
@@ -724,7 +723,7 @@ export async function runSetupTui(
   context: SetupContext,
   initialState: SetupState,
 ): Promise<SetupResult> {
-  const renderer = await createCliRenderer();
+  const renderer = await createCliRenderer({ useMouse: false });
 
   return await new Promise<SetupResult>((resolve, reject) => {
     let settled = false;
