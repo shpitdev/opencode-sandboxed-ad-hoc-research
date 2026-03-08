@@ -1,6 +1,6 @@
 import { createCliRenderer } from "@opentui/core";
 import { render, useKeyboard } from "@opentui/solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For } from "solid-js";
 import {
   applySetupState,
   type SetupContext,
@@ -343,7 +343,7 @@ function stateSnapshot(state: SetupState): string[] {
   return lines;
 }
 
-function SetupWizard(props: {
+export function SetupWizard(props: {
   context: SetupContext;
   initialState: SetupState;
   complete: (result: SetupResult) => void;
@@ -539,102 +539,8 @@ function SetupWizard(props: {
           backgroundColor="#141a20"
           gap={1}
         >
-          <Show when={phase() === "wizard"}>
-            <Show
-              when={activeStep().kind === "summary"}
-              fallback={
-                <box flexDirection="column" gap={1}>
-                  <Show when={activeChoiceStep()}>
-                    {(stepAccessor) => (
-                      <box flexDirection="column" gap={1}>
-                        <text fg="#8fbcd4">{stepAccessor().eyebrow}</text>
-                        <text>
-                          <strong fg="#f6d365">{stepAccessor().title}</strong>
-                        </text>
-                        <text fg="#d7e3ea">{stepAccessor().description}</text>
-                        <text fg="#7d91a2">{stepAccessor().hint}</text>
-                        <tab_select
-                          focused
-                          options={stepAccessor().options}
-                          selectedIndex={activeChoiceIndex()}
-                          showDescription
-                          onChange={(_index: number, option: WizardChoice | null) => {
-                            if (!option) {
-                              return;
-                            }
-                            setState((current) => {
-                              const next = { ...current };
-                              stepAccessor().commit(next, option.value);
-                              return next;
-                            });
-                          }}
-                          onSelect={(_index: number, option: WizardChoice | null) => {
-                            if (!option) {
-                              return;
-                            }
-                            commitAndAdvance(() => {
-                              setState((current) => {
-                                const next = { ...current };
-                                stepAccessor().commit(next, option.value);
-                                return next;
-                              });
-                            });
-                          }}
-                        />
-                      </box>
-                    )}
-                  </Show>
-
-                  <Show when={activeInputStep()}>
-                    {(stepAccessor) => (
-                      <box flexDirection="column" gap={1}>
-                        <text fg="#8fbcd4">{stepAccessor().eyebrow}</text>
-                        <text>
-                          <strong fg="#f6d365">{stepAccessor().title}</strong>
-                        </text>
-                        <text fg="#d7e3ea">{stepAccessor().description}</text>
-                        <text fg="#7d91a2">{stepAccessor().hint}</text>
-                        <Show
-                          when={stepAccessor().key === "sync-timeout" && state().syncTimeoutError}
-                        >
-                          <text fg="#f8b195">{state().syncTimeoutError}</text>
-                        </Show>
-                        <input
-                          focused
-                          value={stepAccessor().value}
-                          placeholder={stepAccessor().placeholder}
-                          onInput={(value: string) => {
-                            setState((current) => {
-                              const next = { ...current };
-                              stepAccessor().commit(next, value);
-                              return next;
-                            });
-                          }}
-                          onSubmit={(value: string) => {
-                            const parsed = Number.parseInt(value.trim(), 10);
-                            const shouldAdvance =
-                              stepAccessor().key !== "sync-timeout" ||
-                              (Number.isInteger(parsed) && parsed > 0);
-
-                            setState((current) => {
-                              const next = { ...current };
-                              stepAccessor().commit(next, value);
-                              return next;
-                            });
-
-                            if (shouldAdvance) {
-                              setStepIndex((current) =>
-                                getNextWizardStepIndex(current, steps().length),
-                              );
-                            }
-                          }}
-                        />
-                      </box>
-                    )}
-                  </Show>
-                </box>
-              }
-            >
+          {phase() === "wizard" ? (
+            activeStep().kind === "summary" ? (
               <box flexDirection="column" gap={1}>
                 <text fg="#8fbcd4">Ready</text>
                 <text>
@@ -673,10 +579,101 @@ function SetupWizard(props: {
                   }}
                 />
               </box>
-            </Show>
-          </Show>
+            ) : (
+              (() => {
+                const choiceStep = activeChoiceStep();
+                if (choiceStep) {
+                  return (
+                    <box flexDirection="column" gap={1}>
+                      <text fg="#8fbcd4">{choiceStep.eyebrow}</text>
+                      <text>
+                        <strong fg="#f6d365">{choiceStep.title}</strong>
+                      </text>
+                      <text fg="#d7e3ea">{choiceStep.description}</text>
+                      <text fg="#7d91a2">{choiceStep.hint}</text>
+                      <tab_select
+                        focused
+                        options={choiceStep.options}
+                        selectedIndex={activeChoiceIndex()}
+                        showDescription
+                        onChange={(_index: number, option: WizardChoice | null) => {
+                          if (!option) {
+                            return;
+                          }
+                          setState((current) => {
+                            const next = { ...current };
+                            choiceStep.commit(next, option.value);
+                            return next;
+                          });
+                        }}
+                        onSelect={(_index: number, option: WizardChoice | null) => {
+                          if (!option) {
+                            return;
+                          }
+                          commitAndAdvance(() => {
+                            setState((current) => {
+                              const next = { ...current };
+                              choiceStep.commit(next, option.value);
+                              return next;
+                            });
+                          });
+                        }}
+                      />
+                    </box>
+                  );
+                }
 
-          <Show when={phase() === "saving"}>
+                const inputStep = activeInputStep();
+                if (inputStep) {
+                  return (
+                    <box flexDirection="column" gap={1}>
+                      <text fg="#8fbcd4">{inputStep.eyebrow}</text>
+                      <text>
+                        <strong fg="#f6d365">{inputStep.title}</strong>
+                      </text>
+                      <text fg="#d7e3ea">{inputStep.description}</text>
+                      <text fg="#7d91a2">{inputStep.hint}</text>
+                      {inputStep.key === "sync-timeout" && state().syncTimeoutError ? (
+                        <text fg="#f8b195">{state().syncTimeoutError}</text>
+                      ) : null}
+                      <input
+                        focused
+                        value={inputStep.value}
+                        placeholder={inputStep.placeholder}
+                        onInput={(value: string) => {
+                          setState((current) => {
+                            const next = { ...current };
+                            inputStep.commit(next, value);
+                            return next;
+                          });
+                        }}
+                        onSubmit={(value: string) => {
+                          const parsed = Number.parseInt(value.trim(), 10);
+                          const shouldAdvance =
+                            inputStep.key !== "sync-timeout" ||
+                            (Number.isInteger(parsed) && parsed > 0);
+
+                          setState((current) => {
+                            const next = { ...current };
+                            inputStep.commit(next, value);
+                            return next;
+                          });
+
+                          if (shouldAdvance) {
+                            setStepIndex((current) =>
+                              getNextWizardStepIndex(current, steps().length),
+                            );
+                          }
+                        }}
+                      />
+                    </box>
+                  );
+                }
+
+                return null;
+              })()
+            )
+          ) : phase() === "saving" ? (
             <box flexDirection="column" gap={1}>
               <text fg="#8fbcd4">Writing</text>
               <text>
@@ -684,35 +681,40 @@ function SetupWizard(props: {
               </text>
               <text fg="#d7e3ea">Running validations and writing files. Stay on this screen.</text>
             </box>
-          </Show>
-
-          <Show when={phase() === "done"}>
+          ) : phase() === "done" ? (
             <box flexDirection="column" gap={1}>
               <text fg="#8fbcd4">Complete</text>
               <text>
                 <strong fg="#9fd3c7">Sandcode is configured.</strong>
               </text>
               <text fg="#d7e3ea">Press Enter or Esc to leave setup.</text>
-              <Show when={result()}>
-                {(saved) => (
-                  <box border borderColor="#1d313a" padding={1} flexDirection="column" gap={1}>
-                    <text fg="#d7e3ea">Config: {saved().configPath}</text>
-                    <Show when={saved().envPath}>
-                      {(envPath) => <text fg="#d7e3ea">Env: {envPath()}</text>}
-                    </Show>
-                  </box>
-                )}
-              </Show>
-            </box>
-          </Show>
+              {(() => {
+                const savedResult = result();
+                if (!savedResult) {
+                  return null;
+                }
 
-          <Show when={phase() === "error"}>
+                return (
+                  <box border borderColor="#1d313a" padding={1} flexDirection="column" gap={1}>
+                    <text fg="#d7e3ea">Config: {savedResult.configPath}</text>
+                    {savedResult.envPath ? (
+                      <text fg="#d7e3ea">Env: {savedResult.envPath}</text>
+                    ) : null}
+                  </box>
+                );
+              })()}
+            </box>
+          ) : phase() === "error" ? (
             <box flexDirection="column" gap={1}>
               <text fg="#f8b195">Validation failed</text>
               <text fg="#fbe4d8">{errorMessage()}</text>
               <text fg="#7d91a2">Press Enter or Esc to go back and edit the setup values.</text>
             </box>
-          </Show>
+          ) : null}
+
+          <box marginTop="auto" border borderColor="#1d313a" padding={1}>
+            <text fg="#7d91a2">Esc goes back. Ctrl+C exits setup immediately.</text>
+          </box>
         </box>
       </box>
     </box>
