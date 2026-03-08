@@ -1,6 +1,6 @@
 import { createCliRenderer } from "@opentui/core";
 import { render, useKeyboard } from "@opentui/solid";
-import { createMemo, createSignal, For } from "solid-js";
+import { createEffect, createMemo, createSignal, For } from "solid-js";
 import {
   applySetupState,
   type SetupContext,
@@ -9,6 +9,7 @@ import {
   type SetupState,
   summarizeSetupContext,
 } from "./setup-core.js";
+import { isSubmitKey, parseChoiceShortcut } from "./setup-ui-keys.js";
 import { getNextWizardStepIndex } from "./setup-ui-state.js";
 
 type WizardChoice = {
@@ -357,6 +358,7 @@ export function SetupWizard(props: {
   );
   const [errorMessage, setErrorMessage] = createSignal<string>();
   const [result, setResult] = createSignal<SetupResult>();
+  const [summaryActionIndex, setSummaryActionIndex] = createSignal(0);
 
   const steps = createMemo(() => buildSteps({ ...state() }));
   const activeStep = createMemo(() => steps()[Math.min(stepIndex(), steps().length - 1)]);
@@ -375,6 +377,12 @@ export function SetupWizard(props: {
     }
     const index = step.options.findIndex((option) => option.value === step.value);
     return index >= 0 ? index : 0;
+  });
+
+  createEffect(() => {
+    if (activeStep().kind === "summary") {
+      setSummaryActionIndex(0);
+    }
   });
 
   const goBack = (): void => {
@@ -436,6 +444,68 @@ export function SetupWizard(props: {
     }
   };
 
+  const updateChoiceSelection = (offset: -1 | 1): void => {
+    const step = activeChoiceStep();
+    if (!step) {
+      return;
+    }
+
+    const nextIndex = Math.max(0, Math.min(activeChoiceIndex() + offset, step.options.length - 1));
+    const option = step.options[nextIndex];
+    if (!option) {
+      return;
+    }
+
+    setState((current) => {
+      const next = { ...current };
+      step.commit(next, option.value);
+      return next;
+    });
+  };
+
+  const commitChoiceAndAdvance = (): void => {
+    const step = activeChoiceStep();
+    if (!step) {
+      return;
+    }
+
+    const option = step.options[activeChoiceIndex()];
+    if (!option) {
+      return;
+    }
+
+    commitAndAdvance(() => {
+      setState((current) => {
+        const next = { ...current };
+        step.commit(next, option.value);
+        return next;
+      });
+    });
+  };
+
+  const triggerSummaryAction = (): void => {
+    if (summaryActionIndex() === 1) {
+      props.cancel(new Error("Setup cancelled."));
+      return;
+    }
+
+    void save();
+  };
+
+  const triggerSummaryShortcut = (index: number): void => {
+    if (index < 0 || index > 1) {
+      return;
+    }
+
+    setSummaryActionIndex(index);
+    if (index === 1) {
+      props.cancel(new Error("Setup cancelled."));
+      return;
+    }
+
+    void save();
+  };
+
   useKeyboard(
     (event: {
       ctrl: boolean;
@@ -457,7 +527,81 @@ export function SetupWizard(props: {
         return;
       }
 
-      if ((phase() === "done" || phase() === "error") && event.name === "return") {
+      if (phase() === "wizard" && activeStep().kind === "choice") {
+        const shortcutIndex = parseChoiceShortcut(event.name);
+        if (shortcutIndex !== undefined) {
+          const step = activeChoiceStep();
+          const option = step?.options[shortcutIndex];
+          if (!option || !step) {
+            return;
+          }
+
+          event.preventDefault();
+          event.stopPropagation();
+          commitAndAdvance(() => {
+            setState((current) => {
+              const next = { ...current };
+              step.commit(next, option.value);
+              return next;
+            });
+          });
+          return;
+        }
+
+        if (event.name === "left") {
+          event.preventDefault();
+          event.stopPropagation();
+          updateChoiceSelection(-1);
+          return;
+        }
+
+        if (event.name === "right") {
+          event.preventDefault();
+          event.stopPropagation();
+          updateChoiceSelection(1);
+          return;
+        }
+
+        if (isSubmitKey(event.name)) {
+          event.preventDefault();
+          event.stopPropagation();
+          commitChoiceAndAdvance();
+          return;
+        }
+      }
+
+      if (phase() === "wizard" && activeStep().kind === "summary") {
+        const shortcutIndex = parseChoiceShortcut(event.name);
+        if (shortcutIndex !== undefined) {
+          event.preventDefault();
+          event.stopPropagation();
+          triggerSummaryShortcut(shortcutIndex);
+          return;
+        }
+
+        if (event.name === "left") {
+          event.preventDefault();
+          event.stopPropagation();
+          setSummaryActionIndex(0);
+          return;
+        }
+
+        if (event.name === "right") {
+          event.preventDefault();
+          event.stopPropagation();
+          setSummaryActionIndex(1);
+          return;
+        }
+
+        if (isSubmitKey(event.name)) {
+          event.preventDefault();
+          event.stopPropagation();
+          triggerSummaryAction();
+          return;
+        }
+      }
+
+      if ((phase() === "done" || phase() === "error") && isSubmitKey(event.name)) {
         event.preventDefault();
         event.stopPropagation();
         goBack();
@@ -554,30 +698,26 @@ export function SetupWizard(props: {
                     {(line) => <text fg="#d7e3ea">{line}</text>}
                   </For>
                 </box>
-                <tab_select
-                  focused
-                  options={[
-                    {
-                      name: "Save",
-                      description: "Write config and finish setup.",
-                      value: "save",
-                    },
-                    {
-                      name: "Cancel",
-                      description: "Exit without writing files.",
-                      value: "cancel",
-                    },
-                  ]}
-                  selectedIndex={0}
-                  showDescription
-                  onSelect={(_index: number, option: WizardChoice | null) => {
-                    if (option?.value === "cancel") {
-                      props.cancel(new Error("Setup cancelled."));
-                      return;
-                    }
-                    void save();
-                  }}
-                />
+                <box flexDirection="column" gap={1}>
+                  <box>
+                    <For each={["Save", "Cancel"]}>
+                      {(label, index) => (
+                        <text
+                          backgroundColor={index() === summaryActionIndex() ? "#334455" : "#1a1a1a"}
+                          fg={index() === summaryActionIndex() ? "#ffff00" : "#ffffff"}
+                        >
+                          {" "}
+                          {label}{" "}
+                        </text>
+                      )}
+                    </For>
+                  </box>
+                  <text fg="#cccccc">
+                    {summaryActionIndex() === 0
+                      ? "Write config and finish setup."
+                      : "Exit without writing files."}
+                  </text>
+                </box>
               </box>
             ) : (
               (() => {
@@ -591,34 +731,26 @@ export function SetupWizard(props: {
                       </text>
                       <text fg="#d7e3ea">{choiceStep.description}</text>
                       <text fg="#7d91a2">{choiceStep.hint}</text>
-                      <tab_select
-                        focused
-                        options={choiceStep.options}
-                        selectedIndex={activeChoiceIndex()}
-                        showDescription
-                        onChange={(_index: number, option: WizardChoice | null) => {
-                          if (!option) {
-                            return;
-                          }
-                          setState((current) => {
-                            const next = { ...current };
-                            choiceStep.commit(next, option.value);
-                            return next;
-                          });
-                        }}
-                        onSelect={(_index: number, option: WizardChoice | null) => {
-                          if (!option) {
-                            return;
-                          }
-                          commitAndAdvance(() => {
-                            setState((current) => {
-                              const next = { ...current };
-                              choiceStep.commit(next, option.value);
-                              return next;
-                            });
-                          });
-                        }}
-                      />
+                      <box flexDirection="column" gap={1}>
+                        <box>
+                          <For each={choiceStep.options}>
+                            {(option, index) => (
+                              <text
+                                backgroundColor={
+                                  index() === activeChoiceIndex() ? "#334455" : "#1a1a1a"
+                                }
+                                fg={index() === activeChoiceIndex() ? "#ffff00" : "#ffffff"}
+                              >
+                                {" "}
+                                {option.name}{" "}
+                              </text>
+                            )}
+                          </For>
+                        </box>
+                        <text fg="#cccccc">
+                          {choiceStep.options[activeChoiceIndex()]?.description ?? ""}
+                        </text>
+                      </box>
                     </box>
                   );
                 }
@@ -713,7 +845,9 @@ export function SetupWizard(props: {
           ) : null}
 
           <box marginTop="auto" border borderColor="#1d313a" padding={1}>
-            <text fg="#7d91a2">Esc goes back. Ctrl+C exits setup immediately.</text>
+            <text fg="#7d91a2">
+              Esc goes back. Ctrl+C exits setup immediately. 1-9 selects a visible choice.
+            </text>
           </box>
         </box>
       </box>
