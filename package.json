@@ -1,6 +1,6 @@
 {
   "name": "sandcode",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Bun-powered research CLI for OpenCode, Daytona sandboxes, and repository analysis",
   "private": false,
   "type": "module",
